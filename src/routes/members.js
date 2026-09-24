@@ -86,12 +86,20 @@ router.post('/', requireAuth, requireRole('admin', 'leader'), async (req, res) =
 // PUT /api/members/:id - cap nhat thong tin thanh vien (khong doi mat khau qua route nay)
 router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res) => {
   try {
+    console.log('[PUT member] id =', req.params.id, '| body =', req.body);
+
     const { name, role } = req.body;
     const updates = {};
     if (name) updates.name = name.trim();
     if (role) updates.role = role;
 
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Không có dữ liệu hợp lệ để cập nhật (cần name hoặc role).' });
+    }
+
     const updated = await dataService.updateMember(req.params.id, updates);
+    console.log('[PUT member] sau khi lưu:', updated && updated.name);
+
     if (!updated) {
       return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
     }
