@@ -84,7 +84,65 @@ async function deleteResetOtp(memberId) {
   db.resetOtps = (db.resetOtps || []).filter((o) => o.memberId !== memberId);
   await writeDb(db);
 }
+// ===== Thong bao =====
+const MAX_NOTIFICATIONS = 2000;
 
+function isNotificationFor(n, member) {
+  const to = String(n.to || '').toLowerCase();
+  return to === String(member.id).toLowerCase() || (!!member.email && to === member.email.toLowerCase());
+}
+
+function cleanNotification(n, requester) {
+  return {
+    id: String(n.id).slice(0, 100),
+    to: String(n.to).slice(0, 200),
+    toName: String(n.toName || '').slice(0, 200),
+    subject: String(n.subject || '').slice(0, 300),
+    body: String(n.body || '').slice(0, 5000),
+    time: String(n.time || new Date().toISOString()),
+    read: !!n.read,
+    taskId: n.taskId ? String(n.taskId).slice(0, 100) : null,
+    from: requester.id,
+  };
+}
+
+async function getNotificationsFor(member) {
+  const db = await readDb();
+  return (db.notifications || []).filter((n) => isNotificationFor(n, member));
+}
+
+// Them thong bao moi; thong bao da co chi cho phep nguoi nhan doi "chua doc" -> "da doc"
+async function saveNotifications(requester, list) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.notifications = db.notifications || [];
+    let changed = false;
+    for (const n of list) {
+      const existing = db.notifications.find((x) => x.id === String(n.id));
+      if (!existing) {
+        db.notifications.unshift(cleanNotification(n, requester));
+        changed = true;
+      } else if (n.read && !existing.read && isNotificationFor(existing, requester)) {
+        existing.read = true;
+        changed = true;
+      }
+    }
+    if (db.notifications.length > MAX_NOTIFICATIONS) db.notifications.length = MAX_NOTIFICATIONS;
+    if (changed) await writeDb(db);
+  });
+}
+
+// Chi xoa duoc thong bao gui cho chinh minh
+async function deleteNotifications(requester, ids) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    const before = (db.notifications || []).length;
+    db.notifications = (db.notifications || []).filter(
+      (n) => !(ids.includes(n.id) && isNotificationFor(n, requester))
+    );
+    if (db.notifications.length !== before) await writeDb(db);
+  });
+}
 module.exports = {
   getAllMembers,
   findMemberByEmail,
@@ -102,6 +160,9 @@ module.exports = {
   findTaskById,
   upsertTask,
   deleteTask,
+  getNotificationsFor,
+  saveNotifications,
+  deleteNotifications,
 };
 // ===== Task =====
 // Khoa tuan tu: cac thao tac ghi task lan luot, tranh 2 yeu cau cung doc-ghi file Drive mot luc

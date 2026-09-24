@@ -6,10 +6,11 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const memberRoutes = require('./routes/members');
 const taskRoutes = require('./routes/tasks');
+const notificationRoutes = require('./routes/notifications');
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // Phuc vu giao dien (index.html) tu chinh server nay: cung ten mien nen khong loi CORS
 const INDEX_FILE = path.join(__dirname, '..', 'index.html');
@@ -23,6 +24,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/notifications', notificationRoutes);
 // Bat loi chung
 app.use((err, req, res, next) => {
   console.error(err);

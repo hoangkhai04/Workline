@@ -5984,6 +5984,8 @@ interface Toast {
 }
 // Bản ghi những task đã đồng bộ lên server (id -> JSON) để biết task nào mới đổi
 const taskSync = { synced: new Map<string, string>() };
+// Bản ghi thông báo đã đồng bộ lên server (id -> đã đọc hay chưa)
+const notifSync = { synced: new Map<string, boolean>() };
 function App() {
   const [members, setMembers] = useState<Member[]>(() => {
     const saved = localStorage.getItem('workline_members');
@@ -6263,6 +6265,146 @@ function App() {
       }).catch((err) => console.error('Delete task error:', err));
     }
   }, [tasks, authToken, tasksLoaded]);
+  // ===== Thông báo: tải từ server, gửi thông báo mới, đồng bộ trạng thái đã đọc =====
+  const [notifsLoaded, setNotifsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!authToken) {
+      setNotifsLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async (first: boolean) => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/notifications`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data.notifications)) return;
+        const server: EmailNotification[] = data.notifications;
+        if (first) notifSync.synced = new Map<string, boolean>();
+        const serverRead = new Map<string, boolean>();
+        for (const n of server) {
+          serverRead.set(n.id, n.read);
+          notifSync.synced.set(n.id, n.read);
+        }
+        setNotifications((prev) => {
+          const localIds = new Set(prev.map((n) => n.id));
+          const fresh = server.filter((n) => !localIds.has(n.id));
+          const updated = prev.map((n) => (serverRead.get(n.id) && !n.read ? { ...n, read: true } : n));
+          const changed = fresh.length > 0 || updated.some((n, i) => n !== prev[i]);
+          return changed ? [...fresh, ...updated] : prev;
+        });
+        if (first) setNotifsLoaded(true);
+      } catch (err) {
+        console.error('Load notifications error:', err);
+      }
+    };
+    load(true);
+    const timer = setInterval(() => load(false), 30000); // kiểm tra thông báo mới mỗi 30 giây
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken || !notifsLoaded) return;
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    };
+    const prev = notifSync.synced;
+    const currentIds = new Set<string>();
+    const toSend: EmailNotification[] = [];
+
+    for (const n of notifications) {
+      currentIds.add(n.id);
+      if (prev.get(n.id) === n.read) continue;
+      prev.set(n.id, n.read);
+      toSend.push(n);
+    }
+    const removed = Array.from(prev.keys()).filter((id) => !currentIds.has(id));
+    removed.forEach((id) => prev.delete(id));
+
+    if (toSend.length > 0) {
+      fetch(`${API_BASE_URL}/api/notifications`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ notifications: toSend }),
+      })
+        .then((res) => {
+          if (!res.ok) toSend.forEach((n) => prev.delete(n.id)); // lần thay đổi sau sẽ gửi lại
+        })
+        .catch(() => toSend.forEach((n) => prev.delete(n.id)));
+    }
+    if (removed.length > 0) {
+      fetch(`${API_BASE_URL}/api/notifications/delete`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ids: removed }),
+      }).catch((err) => console.error('Delete notifications error:', err));
+    }
+  }, [notifications, authToken, notifsLoaded]);
+
+    // ===== Task: tự làm mới từ server mỗi 30 giây =====
+  useEffect(() => {
+    if (!authToken || !tasksLoaded) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/tasks`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data.tasks)) return;
+        const server: Task[] = data.tasks;
+        const synced = taskSync.synced;
+        setTasks((prev) => {
+          const prevById = new Map<string, Task>(prev.map((t) => [t.id, t]));
+          const serverIds = new Set<string>();
+          const next: Task[] = [];
+          let changed = false;
+          for (const s of server) {
+            serverIds.add(s.id);
+            const sJson = JSON.stringify(s);
+            const local = prevById.get(s.id);
+            if (!local) {
+              synced.set(s.id, sJson);
+              next.push(s);
+              changed = true;
+              continue;
+            }
+            const localJson = JSON.stringify(local);
+            if (localJson === sJson) {
+              synced.set(s.id, sJson);
+              next.push(local);
+            } else if (synced.get(s.id) === localJson) {
+              // máy này chưa sửa gì thêm, nhận bản mới từ server
+              synced.set(s.id, sJson);
+              next.push(s);
+              changed = true;
+            } else {
+              next.push(local); // đang có thay đổi chờ gửi, giữ bản trên máy
+            }
+          }
+          for (const t of prev) {
+            if (!serverIds.has(t.id)) next.push(t);
+          }
+          return changed ? next : prev;
+        });
+      } catch (err) {
+        console.error('Refresh tasks error:', err);
+      }
+    };
+    const timer = setInterval(refresh, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [authToken, tasksLoaded]);
   
   if (!currentUser) {
     return (
