@@ -5,7 +5,7 @@ const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const memberRoutes = require('./routes/members');
-
+const taskRoutes = require('./routes/tasks');
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
@@ -22,7 +22,7 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/members', memberRoutes);
-
+app.use('/api/tasks', taskRoutes);
 // Bat loi chung
 app.use((err, req, res, next) => {
   console.error(err);

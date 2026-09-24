@@ -5982,7 +5982,8 @@ interface Toast {
   type: 'success' | 'error' | 'info';
   message: string;
 }
-
+// Bản ghi những task đã đồng bộ lên server (id -> JSON) để biết task nào mới đổi
+const taskSync = { synced: new Map<string, string>() };
 function App() {
   const [members, setMembers] = useState<Member[]>(() => {
     const saved = localStorage.getItem('workline_members');
@@ -6187,7 +6188,82 @@ function App() {
       localStorage.removeItem('workline_user');
     }
   }, [currentUser]);
+  // ===== Task: tải từ server khi vào trang, lưu lên server khi có thay đổi =====
+  const [tasksLoaded, setTasksLoaded] = useState(false);
 
+  useEffect(() => {
+    if (!authToken) {
+      setTasksLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/tasks`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data.tasks)) return;
+        taskSync.synced = new Map<string, string>(data.tasks.map((t: Task) => [t.id, JSON.stringify(t)]));
+        setTasks(data.tasks);
+        setTasksLoaded(true);
+      } catch (err) {
+        console.error('Load tasks error:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken || !tasksLoaded) return;
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    };
+    const prev = taskSync.synced;
+    const currentIds = new Set<string>();
+
+    for (const t of tasks) {
+      currentIds.add(t.id);
+      const json = JSON.stringify(t);
+      if (prev.get(t.id) === json) continue;
+      prev.set(t.id, json);
+      fetch(`${API_BASE_URL}/api/tasks/${encodeURIComponent(t.id)}`, {
+        method: 'PUT',
+        headers,
+        body: json,
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            console.error('Save task error:', data.error);
+            prev.delete(t.id); // lần thay đổi sau sẽ gửi lại
+            return;
+          }
+          // Server sinh mã TASK-xxx thật, cập nhật lại cho khớp
+          if (data.task && data.task.code !== t.code) {
+            setTasks((p) => p.map((x) => (x.id === t.id ? { ...x, code: data.task.code } : x)));
+          }
+        })
+        .catch((err) => {
+          console.error('Save task error:', err);
+          prev.delete(t.id);
+        });
+    }
+
+    for (const id of Array.from(prev.keys())) {
+      if (currentIds.has(id)) continue;
+      prev.delete(id);
+      fetch(`${API_BASE_URL}/api/tasks/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers,
+      }).catch((err) => console.error('Delete task error:', err));
+    }
+  }, [tasks, authToken, tasksLoaded]);
+  
   if (!currentUser) {
     return (
       <LoginView

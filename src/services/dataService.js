@@ -98,4 +98,58 @@ module.exports = {
   findResetOtp,
   updateResetOtp,
   deleteResetOtp,
+  getAllTasks,
+  findTaskById,
+  upsertTask,
+  deleteTask,
 };
+// ===== Task =====
+// Khoa tuan tu: cac thao tac ghi task lan luot, tranh 2 yeu cau cung doc-ghi file Drive mot luc
+let taskLock = Promise.resolve();
+function withTaskLock(fn) {
+  const run = taskLock.then(fn, fn);
+  taskLock = run.catch(() => {});
+  return run;
+}
+
+async function getAllTasks() {
+  const db = await readDb();
+  return db.tasks || [];
+}
+
+async function findTaskById(id) {
+  const tasks = await getAllTasks();
+  return tasks.find((t) => t.id === id) || null;
+}
+
+// Them moi (server sinh ma TASK-001, 002...) hoac cap nhat neu id da ton tai
+async function upsertTask(task) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.tasks = db.tasks || [];
+    const idx = db.tasks.findIndex((t) => t.id === task.id);
+    if (idx === -1) {
+      const max = db.tasks.reduce((m, t) => {
+        const n = parseInt(String(t.code || '').replace(/\D/g, ''), 10);
+        return Number.isFinite(n) && n > m ? n : m;
+      }, 0);
+      const created = { ...task, code: 'TASK-' + String(max + 1).padStart(3, '0') };
+      db.tasks.unshift(created);
+      await writeDb(db);
+      return created;
+    }
+    // Ma task va nguoi tao khong doi sau khi da tao
+    const updated = { ...task, code: db.tasks[idx].code, creator: db.tasks[idx].creator };
+    db.tasks[idx] = updated;
+    await writeDb(db);
+    return updated;
+  });
+}
+
+async function deleteTask(id) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.tasks = (db.tasks || []).filter((t) => t.id !== id);
+    await writeDb(db);
+  });
+}
