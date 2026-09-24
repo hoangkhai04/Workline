@@ -1,28 +1,37 @@
-const nodemailer = require('nodemailer');
+async function sendViaBrevo({ to, subject, html, text }) {
+  const raw = String(process.env.MAIL_FROM || process.env.SMTP_USER || '').trim();
+  const m = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
+  const sender = m
+    ? { name: m[1].trim() || 'Workline', email: m[2].trim() }
+    : { name: 'Workline', email: raw };
 
-/**
- * Cau hinh SMTP qua bien moi truong. Vi du voi Gmail:
- *   SMTP_HOST=smtp.gmail.com
- *   SMTP_PORT=465
- *   SMTP_SECURE=true
- *   SMTP_USER=ten.ban@gmail.com
- *   SMTP_PASS=matkhau_ung_dung_16_ky_tu   (App Password, KHONG dung mat khau Gmail thuong)
- *   MAIL_FROM="Workline" <ten.ban@gmail.com>
- *
- * Voi cac dich vu khac (SendGrid, Mailgun, Resend SMTP...) chi can doi HOST/PORT/USER/PASS tuong ung.
- */
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || 'false') === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+  const recipients = (Array.isArray(to) ? to : [to]).map((e) => ({ email: String(e).trim() }));
 
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender,
+      to: recipients,
+      subject,
+      htmlContent: html || `<p>${text || ''}</p>`,
+      ...(text ? { textContent: text } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Brevo ${res.status}: ${body}`);
+  }
+}
+
+// Giu ten "transporter.sendMail" de cac ham ben duoi khong phai sua
+const transporter = { sendMail: (opts) => sendViaBrevo(opts) };
 const FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5500';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://hoangkhai04.github.io';
 
 async function sendInviteEmail({ to, name, email, tempPassword, role }) {
   const loginUrl = FRONTEND_URL;
