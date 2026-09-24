@@ -6010,6 +6010,25 @@ function App() {
     }
   });
 
+  // Tải danh sách nhân sự thật từ server khi vào trang
+  useEffect(() => {
+    if (!authToken) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/members`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.members) {
+          setMembers(data.members);
+        }
+      } catch (err) {
+        console.error('Load members error:', err);
+      }
+    })();
+  }, [authToken]);
+
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('workline_tasks');
     return saved ? JSON.parse(saved) : INITIAL_TASKS;
