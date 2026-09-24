@@ -130,27 +130,11 @@ async function saveNotifications(requester, list) {
   });
 }
 
-// Them thong bao moi; thong bao da co chi cho phep nguoi nhan doi "chua doc" -> "da doc"
-async function saveNotifications(requester, list) {
-  return withTaskLock(async () => {
-    const db = await readDb();
-    db.notifications = db.notifications || [];
-    let changed = false;
-    for (const n of list) {
-      const existing = db.notifications.find((x) => x.id === String(n.id));
-      if (!existing) {
-        db.notifications.unshift(cleanNotification(n, requester));
-        changed = true;
-      } else if (n.read && !existing.read && isNotificationFor(existing, requester)) {
-        existing.read = true;
-        changed = true;
-      }
-    }
-    if (db.notifications.length > MAX_NOTIFICATIONS) db.notifications.length = MAX_NOTIFICATIONS;
-    if (changed) await writeDb(db);
-  });
+// Lay danh sach thong bao gui cho member nay
+async function getNotificationsFor(member) {
+  const db = await readDb();
+  return (db.notifications || []).filter((n) => isNotificationFor(n, member));
 }
-
 // Chi xoa duoc thong bao gui cho chinh minh
 async function deleteNotifications(requester, ids) {
   return withTaskLock(async () => {
