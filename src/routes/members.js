@@ -115,7 +115,7 @@ const RESEND_INVITE_COOLDOWN_MS = 60 * 1000; // chong bam lien tuc: toi da 1 lan
 const lastInviteSent = new Map(); // memberId -> timestamp
 
 // POST /api/members/:id/resend-invite
-router.post('/:id/resend-invite', async (req, res) => {
+router.post('/:id/resend-invite', requireAuth, requireRole('admin', 'leader'), async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Vui lòng đăng nhập.' });
