@@ -31,10 +31,10 @@ async function sendViaBrevo({ to, subject, html, text }) {
 // Giu ten "transporter.sendMail" de cac ham ben duoi khong phai sua
 const transporter = { sendMail: (opts) => sendViaBrevo(opts) };
 const FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://hoangkhai04.github.io';
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://hoangkhai04.github.io/Workline').replace(/\/+$/, '');
 
 async function sendInviteEmail({ to, name, email, tempPassword, role }) {
-  const loginUrl = FRONTEND_URL;
+  const loginUrl = `${FRONTEND_URL}/`;
   const roleLabel = role === 'admin' ? 'Quản trị viên' : role === 'leader' ? 'Trưởng nhóm' : 'Thành viên';
 
   await transporter.sendMail({
@@ -85,7 +85,7 @@ async function sendResetOtpEmail({ to, name, otp }) {
 
 // (Cu) Gui link resetToken - khong con duoc dung boi forgot-password nhung van giu de tuong thich
 async function sendResetPasswordEmail({ to, name, resetToken }) {
-  const resetUrl = `${FRONTEND_URL}?resetToken=${resetToken}`;
+  const resetUrl = `${FRONTEND_URL}/?resetToken=${resetToken}`;
 
   await transporter.sendMail({
     from: FROM,
