@@ -8,7 +8,7 @@ const memberRoutes = require('./routes/members');
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
 app.use(express.json());
 
 // Phuc vu giao dien (index.html) tu chinh server nay: cung ten mien nen khong loi CORS
