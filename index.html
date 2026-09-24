@@ -6232,16 +6232,38 @@ function App() {
 
     const exists = Boolean(targetMember);
     if (exists && targetMember) {
-      const enrichedMember: Member = {
-        ...savedMember,
-        createdBy: targetMember.createdBy || savedMember.createdBy,
-        createdByName: targetMember.createdByName || savedMember.createdByName,
-      };
-      setMembers((prev) => prev.map((m) => (m.id === enrichedMember.id ? enrichedMember : m)));
-      if (enrichedMember.id === currentUser.id) {
-        setCurrentUser(enrichedMember);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/members/${savedMember.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            name: savedMember.name,
+            displayName: savedMember.displayName,
+            phone: savedMember.phone,
+            team: savedMember.team,
+            code: savedMember.code,
+            role: savedMember.role,
+            avatarUrl: savedMember.avatarUrl || '',
+            violations: savedMember.violations || [],
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          addToast('error', data.error || 'Không thể cập nhật thành viên. Vui lòng thử lại.');
+          return;
+        }
+        const enrichedMember: Member = { ...targetMember, ...data.member };
+        setMembers((prev) => prev.map((m) => (m.id === enrichedMember.id ? enrichedMember : m)));
+        if (enrichedMember.id === currentUser.id) {
+          setCurrentUser(enrichedMember);
+        }
+        addToast('success', `Đã cập nhật thông tin cho ${enrichedMember.name}.`);
+      } catch (err) {
+        addToast('error', 'Không thể kết nối máy chủ để cập nhật thành viên. Kiểm tra lại mạng hoặc server.');
       }
-      addToast('success', `Đã cập nhật thông tin cho ${enrichedMember.name}.`);
     } else {
       // Them thanh vien moi qua backend: server tu sinh mat khau tam va gui email moi
       try {

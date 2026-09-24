@@ -28,7 +28,7 @@ router.get('/', requireAuth, async (req, res) => {
 // POST /api/members - Admin/Leader them thanh vien moi -> gui email moi voi mat khau tam
 router.post('/', requireAuth, requireRole('admin', 'leader'), async (req, res) => {
   try {
-    const { name, email, role } = req.body;
+    const { name, email, role, displayName, phone, team, code, avatarUrl } = req.body;
     if (!name || !email || !role) {
       return res.status(400).json({ error: 'Vui lòng nhập đủ tên, email và vai trò.' });
     }
@@ -49,6 +49,12 @@ router.post('/', requireAuth, requireRole('admin', 'leader'), async (req, res) =
       name: name.trim(),
       email: email.trim(),
       role,
+      displayName: (displayName || '').trim(),
+      phone: (phone || '').trim(),
+      team: (team || '').trim(),
+      code: (code || '').trim(),
+      avatarUrl: avatarUrl || undefined,
+      violations: [],
       passwordHash,
       createdBy: req.user.id,
       createdByName: req.user.name,
@@ -83,26 +89,84 @@ router.post('/', requireAuth, requireRole('admin', 'leader'), async (req, res) =
   }
 });
 
+const VALID_ROLES = ['admin', 'leader', 'member'];
+
 // PUT /api/members/:id - cap nhat thong tin thanh vien (khong doi mat khau qua route nay)
 router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res) => {
   try {
-    console.log('[PUT member] id =', req.params.id, '| body =', req.body);
+    const requester = await dataService.findMemberById(req.user.id);
+    if (!requester) return res.status(401).json({ error: 'Vui lòng đăng nhập lại.' });
 
-    const { name, role } = req.body;
+    const target = await dataService.findMemberById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
+
+    const isSelf = requester.id === target.id;
+    const { name, displayName, phone, team, code, avatarUrl, violations, role } = req.body;
+
+    // ----- Kiem tra quyen doi vai tro / sua nguoi khac -----
+    if (requester.role === 'leader') {
+      if (target.role === 'admin') {
+        return res.status(403).json({ error: 'Leader không được chỉnh sửa Quản trị viên.' });
+      }
+      if (role === 'admin') {
+        return res.status(403).json({ error: 'Chỉ Quản trị viên mới có quyền cấp vai trò Admin.' });
+      }
+    }
+    if (role !== undefined) {
+      if (!VALID_ROLES.includes(role)) {
+        return res.status(400).json({ error: 'Vai trò không hợp lệ.' });
+      }
+      if (role !== target.role) {
+        if (requester.role !== 'admin' && target.role === 'leader') {
+          return res.status(403).json({ error: 'Chỉ Quản trị viên mới có quyền xoá vai trò của Leader.' });
+        }
+        if (isSelf) {
+          return res.status(403).json({ error: 'Bạn không thể tự thay đổi vai trò của chính mình.' });
+        }
+        const isCreatorOfRequester =
+          (requester.createdBy && requester.createdBy === target.id) ||
+          (target.email || '').toLowerCase() === 'danhhoangkhai03@gmail.com' ||
+          target.code === 'WL-100';
+        if (target.role === 'admin' && isCreatorOfRequester) {
+          return res.status(403).json({ error: 'Không thể thay đổi vai trò của Quản trị viên đã tạo tài khoản của bạn.' });
+        }
+      }
+    }
+
+    // ----- Gom cac truong duoc phep cap nhat -----
     const updates = {};
-    if (name) updates.name = name.trim();
-    if (role) updates.role = role;
+    if (typeof name === 'string' && name.trim()) updates.name = name.trim();
+    if (typeof displayName === 'string') updates.displayName = displayName.trim();
+    if (typeof phone === 'string') updates.phone = phone.trim();
+    if (typeof team === 'string') updates.team = team.trim();
+    if (typeof avatarUrl === 'string') updates.avatarUrl = avatarUrl.trim() || undefined;
+    if (role !== undefined) updates.role = role;
+
+    if (typeof code === 'string' && code.trim()) {
+      const all = await dataService.getAllMembers();
+      const dup = all.find(
+        (m) => m.id !== target.id && (m.code || '').toLowerCase() === code.trim().toLowerCase()
+      );
+      if (dup) return res.status(409).json({ error: `Mã ${code.trim()} đã thuộc về ${dup.name}.` });
+      updates.code = code.trim();
+    }
+
+    if (Array.isArray(violations)) {
+      updates.violations = violations
+        .filter((v) => v && v.date && v.note)
+        .map((v) => ({
+          id: String(v.id || 'v' + Date.now()),
+          date: String(v.date),
+          note: String(v.note).slice(0, 500),
+          ...(v.taskId ? { taskId: String(v.taskId) } : {}),
+        }));
+    }
 
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: 'Không có dữ liệu hợp lệ để cập nhật (cần name hoặc role).' });
+      return res.status(400).json({ error: 'Không có dữ liệu hợp lệ để cập nhật.' });
     }
 
-    const updated = await dataService.updateMember(req.params.id, updates);
-    console.log('[PUT member] sau khi lưu:', updated && updated.name);
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
-    }
+    const updated = await dataService.updateMember(target.id, updates);
     const { passwordHash, ...safeMember } = updated;
     return res.json({ member: safeMember });
   } catch (err) {
