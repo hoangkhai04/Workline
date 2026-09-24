@@ -1,0 +1,7 @@
+
+# Bi mat va file sinh ra
+node_modules/
+.env
+gen-lang-client-*.json
+backup/
+.DS_Store
