@@ -106,9 +106,28 @@ function cleanNotification(n, requester) {
   };
 }
 
-async function getNotificationsFor(member) {
-  const db = await readDb();
-  return (db.notifications || []).filter((n) => isNotificationFor(n, member));
+async function saveNotifications(requester, list) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.notifications = db.notifications || [];
+    const created = [];
+    let changed = false;
+    for (const n of list) {
+      const existing = db.notifications.find((x) => x.id === String(n.id));
+      if (!existing) {
+        const clean = cleanNotification(n, requester);
+        db.notifications.unshift(clean);
+        created.push(clean);
+        changed = true;
+      } else if (n.read && !existing.read && isNotificationFor(existing, requester)) {
+        existing.read = true;
+        changed = true;
+      }
+    }
+    if (db.notifications.length > MAX_NOTIFICATIONS) db.notifications.length = MAX_NOTIFICATIONS;
+    if (changed) await writeDb(db);
+    return created;
+  });
 }
 
 // Them thong bao moi; thong bao da co chi cho phep nguoi nhan doi "chua doc" -> "da doc"
@@ -143,6 +162,34 @@ async function deleteNotifications(requester, ids) {
     if (db.notifications.length !== before) await writeDb(db);
   });
 }
+
+// ===== Push subscription =====
+async function savePushSubscription(memberId, sub) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.pushSubscriptions = (db.pushSubscriptions || []).filter((s) => s.endpoint !== sub.endpoint);
+    db.pushSubscriptions.push({
+      memberId,
+      endpoint: sub.endpoint,
+      keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      createdAt: new Date().toISOString(),
+    });
+    await writeDb(db);
+  });
+}
+
+async function removePushSubscription(endpoint) {
+  return withTaskLock(async () => {
+    const db = await readDb();
+    db.pushSubscriptions = (db.pushSubscriptions || []).filter((s) => s.endpoint !== endpoint);
+    await writeDb(db);
+  });
+}
+
+async function getPushSubscriptionsFor(memberId) {
+  const db = await readDb();
+  return (db.pushSubscriptions || []).filter((s) => s.memberId === memberId);
+}
 module.exports = {
   getAllMembers,
   findMemberByEmail,
@@ -163,6 +210,9 @@ module.exports = {
   getNotificationsFor,
   saveNotifications,
   deleteNotifications,
+    savePushSubscription,
+  removePushSubscription,
+  getPushSubscriptionsFor,
 };
 // ===== Task =====
 // Khoa tuan tu: cac thao tac ghi task lan luot, tranh 2 yeu cau cung doc-ghi file Drive mot luc

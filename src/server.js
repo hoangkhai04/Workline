@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const memberRoutes = require('./routes/members');
 const taskRoutes = require('./routes/tasks');
 const notificationRoutes = require('./routes/notifications');
+const pushRoutes = require('./routes/push');
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
@@ -16,6 +17,7 @@ app.use(express.json({ limit: '1mb' }));
 const INDEX_FILE = path.join(__dirname, '..', 'index.html');
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'workline-server' }));
 app.get(['/', '/index.html'], (req, res) => res.sendFile(INDEX_FILE));
+app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, '..', 'sw.js')));
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'workline-server' });
@@ -25,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/push', pushRoutes);
 // Bat loi chung
 app.use((err, req, res, next) => {
   console.error(err);

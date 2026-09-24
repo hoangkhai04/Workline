@@ -2,6 +2,7 @@ const express = require('express');
 
 const dataService = require('../services/dataService');
 const { requireAuth } = require('../middleware/auth');
+const { pushForNotifications } = require('../services/push');
 
 const router = express.Router();
 
@@ -29,7 +30,8 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Dữ liệu thông báo không hợp lệ.' });
     }
     const valid = list.filter((n) => n && typeof n.id === 'string' && n.id && typeof n.to === 'string' && n.to);
-    await dataService.saveNotifications(requester, valid);
+    const created = await dataService.saveNotifications(requester, valid);
+    pushForNotifications(requester, created).catch((e) => console.error('Push error:', e));
     return res.json({ ok: true });
   } catch (err) {
     console.error('Save notifications error:', err);
