@@ -5,3 +5,8 @@ node_modules/
 gen-lang-client-*.json
 backup/
 .DS_Store
+node_modules
+.env
+*.json.docx
+gen-lang-client*.json
+checkDrive.js
