@@ -175,6 +175,49 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
   }
 });
 
+// DELETE /api/members/:id - Admin xoa thanh vien khoi he thong.
+// Chi Admin moi goi duoc (khop voi kiem tra o frontend: currentUser.role !== 'admin').
+router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const requester = await dataService.findMemberById(req.user.id);
+    if (!requester) return res.status(401).json({ error: 'Vui lòng đăng nhập lại.' });
+
+    const target = await dataService.findMemberById(req.params.id);
+    if (!target) {
+      // Da khong con tren server -> coi nhu da xoa xong, tranh loi 404 gay nham lan o client
+      return res.json({ message: 'Thành viên này đã không còn trong hệ thống.' });
+    }
+
+    if (target.id === requester.id) {
+      return res.status(400).json({ error: 'Bạn không thể tự xoá chính mình khỏi hệ thống.' });
+    }
+
+    // Quy tac giong frontend: khong ai duoc xoa Admin Khai Danh (tai khoan goc),
+    // va khong duoc xoa Admin da tao ra tai khoan cua chinh minh.
+    const isProtectedRootAdmin =
+      target.id === 'u0' ||
+      (target.email || '').toLowerCase() === 'danhhoangkhai03@gmail.com' ||
+      target.code === 'WL-100';
+    const isCreatorOfRequester = requester.createdBy && requester.createdBy === target.id;
+
+    if (isProtectedRootAdmin || isCreatorOfRequester) {
+      return res.status(403).json({
+        error: `Bạn không được phép xoá Quản trị viên đã tạo tài khoản của bạn (${target.name}).`,
+      });
+    }
+
+    const removed = await dataService.deleteMember(target.id);
+    if (!removed) {
+      return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
+    }
+
+    return res.json({ message: `Đã xoá thành viên ${target.name}.` });
+  } catch (err) {
+    console.error('Delete member error:', err);
+    return res.status(500).json({ error: 'Có lỗi xảy ra khi xoá thành viên.' });
+  }
+});
+
 // ===================================================================
 // DÁN ĐOẠN NÀY VÀO src/routes/members.js, NGAY TRÊN DÒNG:
 //     module.exports = router;

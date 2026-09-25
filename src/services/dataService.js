@@ -33,6 +33,18 @@ async function updateMember(id, updates) {
   return db.members[idx];
 }
 
+// Xoa thanh vien khoi Google Drive DB. Tra ve true neu co xoa (tim thay va da xoa),
+// false neu khong tim thay id do (de route co the tra 404 chinh xac).
+async function deleteMember(id) {
+  const db = await readDb();
+  db.members = db.members || [];
+  const before = db.members.length;
+  db.members = db.members.filter((m) => m.id !== id);
+  const removed = db.members.length !== before;
+  if (removed) await writeDb(db);
+  return removed;
+}
+
 async function saveResetToken(entry) {
   const db = await readDb();
   db.resetTokens = db.resetTokens || [];
@@ -180,6 +192,7 @@ module.exports = {
   findMemberById,
   addMember,
   updateMember,
+  deleteMember,
   saveResetToken,
   findResetToken,
   deleteResetToken,
