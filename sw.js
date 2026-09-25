@@ -10,9 +10,9 @@ self.addEventListener('push', (event) => {
   }
   event.waitUntil(
     self.registration.showNotification(data.title || 'Workline', {
-      body: data.body || '',
-      tag: data.tag || undefined,
-    })
+  body: data.body || '',
+  tag: data.tag || undefined,
+    })  
   );
 });
 
