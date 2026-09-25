@@ -3417,7 +3417,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400"
+        className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 glacier-btn-bounce"
       >
         <ArrowLeft className="h-4 w-4" />
         Quay lại Trang chủ
@@ -3458,7 +3458,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                   onDeleteCompletedTask(task.id);
                   onBack();
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition-colors glacier-btn-bounce"
                 title="Xoá nhiệm vụ hoàn thành này khỏi danh sách của bạn (các thành viên khác vẫn giữ nguyên)"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -3470,7 +3470,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
               <button
                 type="button"
                 onClick={() => onDelete(task.id)}
-                className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 glacier-btn-bounce"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Xoá vĩnh viễn
@@ -3497,7 +3497,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             <button
               type="button"
               onClick={() => onRequestExtend(task.id)}
-              className="rounded-lg bg-amber-100 text-amber-800 px-2.5 py-1 font-bold hover:bg-amber-200 transition-colors"
+              className="rounded-lg bg-amber-100 text-amber-800 px-2.5 py-1 font-bold hover:bg-amber-200 transition-colors glacier-btn-bounce"
             >
               {isLeader ? 'Gia hạn task' : 'Xin gia hạn'}
             </button>
@@ -3571,7 +3571,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onRemoveAssignee(task.id, aid)}
-                        className="text-slate-400 hover:text-rose-500"
+                        className="text-slate-400 hover:text-rose-500 glacier-btn-bounce"
                         title="Gỡ khỏi task"
                       >
                         <UserX className="h-3.5 w-3.5" />
@@ -3607,7 +3607,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => handleSelectAssigneeSuggestion(m)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-sky-50 dark:hover:bg-slate-700"
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-sky-50 dark:hover:bg-slate-700 glacier-btn-bounce"
                         >
                           <span className="font-semibold text-slate-800 dark:text-slate-200">{displayNameOf(m)}</span>
                           <span className="text-slate-400">{m.team || 'Chưa có nhóm'}</span>
@@ -3625,7 +3625,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                   type="button"
                   onClick={handleAddAssigneeClick}
                   disabled={!selectedNewAssignee}
-                  className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-blue-600"
+                  className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-blue-600 glacier-btn-bounce"
                 >
                   Thêm
                 </button>
@@ -3640,7 +3640,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             <button
               type="button"
               onClick={() => onAccept(task.id)}
-              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700"
+              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 glacier-btn-bounce"
             >
               Nhận việc ngay
             </button>
@@ -3650,7 +3650,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             <button
               type="button"
               onClick={() => onComplete(task.id)}
-              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-teal-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-teal-700 glacier-btn-bounce"
             >
               <CheckCircle className="h-4 w-4" />
               Đánh dấu hoàn thành
@@ -3661,7 +3661,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             <button
               type="button"
               onClick={() => onReopen(task.id)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 glacier-btn-bounce"
             >
               Mở lại task này
             </button>
@@ -3695,7 +3695,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             />
             <button
               type="submit"
-              className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-blue-600"
+              className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-blue-600 glacier-btn-bounce"
             >
               Cập nhật tiến độ
             </button>
@@ -3778,7 +3778,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
           />
           <button
             type="submit"
-            className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+            className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 glacier-btn-bounce"
           >
             <Send className="h-4 w-4" />
             Gửi
@@ -4155,7 +4155,7 @@ const MemberModal: React.FC<MemberModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setAvatarUrl('')}
-                    className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-white shadow-xs hover:bg-rose-600 transition-colors cursor-pointer"
+                    className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-white shadow-xs hover:bg-rose-600 transition-colors cursor-pointer glacier-btn-bounce"
                     title="Xoá ảnh đại diện (sử dụng chữ cái đầu)"
                   >
                     <X className="h-3 w-3" />
@@ -4186,7 +4186,7 @@ const MemberModal: React.FC<MemberModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setAvatarUrl('')}
-                      className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors cursor-pointer glacier-btn-bounce"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Xoá ảnh
