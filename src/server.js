@@ -18,7 +18,10 @@ const INDEX_FILE = path.join(__dirname, '..', 'index.html');
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'workline-server' }));
 app.get(['/', '/index.html'], (req, res) => res.sendFile(INDEX_FILE));
 app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, '..', 'sw.js')));
-
+app.get('/apple-touch-icon.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'apple-touch-icon.png')));
+app.get('/icon-192.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'icon-192.png')));
+app.get('/icon-512.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'icon-512.png')));
+app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, '..', 'manifest.json')));
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'workline-server' });
 });
