@@ -970,7 +970,13 @@ const HomeView: React.FC<HomeViewProps> = ({
     !t.acceptedBy.includes(currentUser.id) &&
     (t.assignees.includes(currentUser.id) || t.type === 'chung');
 
-  const tasksToReceive = tasks.filter((t) => !isHiddenForMe(t) && canAccept(t));
+  // Mục "Cần nhận việc": TẤT CẢ thành viên đều thấy các task đang chờ nhận,
+  // kể cả khi không phải người được tag. Quyền bấm "Nhận việc" vẫn do canAccept() quyết định
+  // (chỉ assignees hoặc task loại "chung" mới bấm được) — xem canAcc / canAccept(t) bên dưới.
+  const tasksToReceive = tasks.filter((t) => !isHiddenForMe(t) && t.status === 'cho_nhan');
+  // Số việc THỰC SỰ dành cho người dùng hiện tại (được tag / hoặc việc chung) - dùng cho câu chào & số liệu cá nhân,
+  // khác với tasksToReceive (danh sách hiển thị cho tất cả mọi người xem).
+  const myAcceptableCount = tasks.filter((t) => !isHiddenForMe(t) && canAccept(t)).length;
   const tasksInProgress = tasks.filter((t) => !isHiddenForMe(t) && t.status === 'dang_xu_ly');
   const myTasks = tasks.filter((t) => !isHiddenForMe(t) && t.status !== 'hoan_thanh' && t.acceptedBy.includes(currentUser.id));
   const completedTasks = tasks.filter((t) => !isHiddenForMe(t) && t.status === 'hoan_thanh');
@@ -1045,7 +1051,7 @@ const HomeView: React.FC<HomeViewProps> = ({
             Xin chào, {displayNameOf(currentUser)} 👋
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Hôm nay bạn có {tasksToReceive.length} công việc cần nhận và {myTasks.length} việc đang thực hiện.
+            Hôm nay bạn có {myAcceptableCount} công việc cần nhận và {myTasks.length} việc đang thực hiện.
             {isLeader && pendingExtensions.length > 0 && (
               <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">
                 • {pendingExtensions.length} yêu cầu gia hạn đang chờ bạn duyệt!
@@ -1433,7 +1439,7 @@ const HomeView: React.FC<HomeViewProps> = ({
                     {activePopup === 'vi_pham' && (isLeader ? `Danh sách vi phạm nhân sự (${allViolations.length})` : `Vi phạm của tôi (${myViolationsCount})`)}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {activePopup === 'cho_nhan' && 'Danh sách các công việc được giao cho bạn hoặc công việc chung đang chờ tiếp nhận'}
+                    {activePopup === 'cho_nhan' && 'Toàn bộ công việc đang chờ tiếp nhận trong nhóm — chỉ người được giao (hoặc việc chung) mới bấm nhận được'}
                     {activePopup === 'dang_xu_ly' && 'Các công việc toàn nhóm đang trong quá trình thực hiện'}
                     {activePopup === 'gia_han' && (isLeader ? 'Leader xem xét, duyệt hoặc từ chối đề xuất gia hạn của nhân sự' : 'Theo dõi trạng thái các yêu cầu gia hạn bạn đã gửi')}
                     {activePopup === 'qua_han' && 'Các công việc chưa hoàn thành và đã vượt quá thời hạn cam kết'}
@@ -1744,6 +1750,10 @@ const HomeView: React.FC<HomeViewProps> = ({
                   {tasksToReceive.map((t) => {
                     const overdue = isOverdue(t);
                     const creator = allMembers.find((m) => m.id === t.creator);
+                    const canAcc = canAccept(t);
+                    const assigneeMembers = t.assignees
+                      .map((aid) => allMembers.find((m) => m.id === aid))
+                      .filter(Boolean) as Member[];
                     return (
                       <div
                         key={t.id}
@@ -1776,6 +1786,18 @@ const HomeView: React.FC<HomeViewProps> = ({
                           </span>
                         </div>
 
+                        {/* Chỉ báo người được tag - ai cũng thấy, nhưng chỉ người được tag mới bấm nhận được */}
+                        {t.type !== 'chung' && assigneeMembers.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                            <span className="font-semibold text-slate-400">Được giao cho:</span>
+                            {assigneeMembers.map((m) => (
+                              <span key={m.id} className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 font-semibold text-slate-600 dark:text-slate-300">
+                                {displayNameOf(m)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-600/60 text-xs">
                           <div className="flex items-center gap-3 text-slate-500">
                             <span>Giao bởi: <b>{displayNameOf(creator)}</b></span>
@@ -1796,13 +1818,15 @@ const HomeView: React.FC<HomeViewProps> = ({
                             >
                               Xem chi tiết
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => onAcceptTask(t.id)}
-                              className="glacier-btn-bounce rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 px-3.5 py-1 text-xs font-bold text-white shadow-xs hover:from-sky-500 hover:to-blue-500"
-                            >
-                              Nhận việc ngay
-                            </button>
+                            {canAcc && (
+                              <button
+                                type="button"
+                                onClick={() => onAcceptTask(t.id)}
+                                className="glacier-btn-bounce rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 px-3.5 py-1 text-xs font-bold text-white shadow-xs hover:from-sky-500 hover:to-blue-500"
+                              >
+                                Nhận việc ngay
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1811,7 +1835,7 @@ const HomeView: React.FC<HomeViewProps> = ({
 
                   {tasksToReceive.length === 0 && (
                     <div className="py-12 text-center text-sm text-slate-400">
-                      Không có công việc nào đang chờ bạn nhận 🎉
+                      Không có công việc nào đang chờ tiếp nhận 🎉
                     </div>
                   )}
                 </div>
