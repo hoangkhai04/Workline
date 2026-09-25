@@ -10,3 +10,4 @@ node_modules
 *.json.docx
 gen-lang-client*.json
 checkDrive.js
+workline-build/node_modules/
