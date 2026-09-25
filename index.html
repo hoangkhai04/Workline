@@ -20,7 +20,12 @@
 }
 </script>
 
-<link rel="stylesheet" href="./output.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Make Tailwind's dark: variants respond to the .dark class on <html>
+  // (instead of the OS prefers-color-scheme), so the in-app light/dark toggle works.
+  tailwind.config = { darkMode: "class" };
+</script>
 
 <style>
 
