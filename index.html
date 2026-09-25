@@ -6637,7 +6637,7 @@ function App() {
     }
   };
 
-  const handleDeleteMember = (memberId: string) => {
+  const handleDeleteMember = async (memberId: string) => {
     if (currentUser.role !== 'admin') {
       addToast('error', 'Chỉ Quản trị viên (Admin) mới có quyền xoá nhân sự.');
       return;
@@ -6659,6 +6659,21 @@ function App() {
 
     if (isCreatorOfCurrent) {
       addToast('error', `Bạn không được phép xoá Quản trị viên đã tạo tài khoản của bạn (${target.name})!`);
+      return;
+    }
+
+        try {
+      const res = await fetch(`${API_BASE_URL}/api/members/${memberId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        addToast('error', data.error || 'Không thể xoá thành viên. Vui lòng thử lại.');
+        return;
+      }
+    } catch (err) {
+      addToast('error', 'Không thể kết nối máy chủ để xoá thành viên. Kiểm tra lại mạng hoặc server.');
       return;
     }
 
