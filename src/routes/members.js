@@ -173,6 +173,7 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
           ...(v.categoryLabel ? { categoryLabel: String(v.categoryLabel).slice(0, 200) } : {}),
           ...(v.categoryGroup ? { categoryGroup: String(v.categoryGroup).slice(0, 100) } : {}),
           ...(v.categoryCode ? { categoryCode: String(v.categoryCode).slice(0, 50) } : {}),
+          ...(v.handlingSuggestion ? { handlingSuggestion: String(v.handlingSuggestion).slice(0, 1000) } : {}),
         }));
     }
 
