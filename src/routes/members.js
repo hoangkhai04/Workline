@@ -152,6 +152,8 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
     }
 
     if (Array.isArray(violations)) {
+      const VALID_SEVERITY = ['cao', 'trungbinh', 'thap'];
+      const VALID_STATUS = ['xac_nhan', 'cho_xu_ly', 'tu_choi'];
       updates.violations = violations
         .filter((v) => v && v.date && v.note)
         .map((v) => ({
@@ -159,6 +161,18 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
           date: String(v.date),
           note: String(v.note).slice(0, 500),
           ...(v.taskId ? { taskId: String(v.taskId) } : {}),
+          // ----- Cac truong mo rong cua "Chi tiet bao cao vi pham" -----
+          ...(v.code ? { code: String(v.code).slice(0, 50) } : {}),
+          ...(VALID_SEVERITY.includes(v.severity) ? { severity: v.severity } : {}),
+          ...(VALID_STATUS.includes(v.status) ? { status: v.status } : {}),
+          ...(v.location ? { location: String(v.location).slice(0, 200) } : {}),
+          ...(v.reportedByName ? { reportedByName: String(v.reportedByName).slice(0, 200) } : {}),
+          ...(v.roleInShift ? { roleInShift: String(v.roleInShift).slice(0, 200) } : {}),
+          ...(typeof v.directContact === 'boolean' ? { directContact: v.directContact } : {}),
+          ...(v.description ? { description: String(v.description).slice(0, 2000) } : {}),
+          ...(v.categoryLabel ? { categoryLabel: String(v.categoryLabel).slice(0, 200) } : {}),
+          ...(v.categoryGroup ? { categoryGroup: String(v.categoryGroup).slice(0, 100) } : {}),
+          ...(v.categoryCode ? { categoryCode: String(v.categoryCode).slice(0, 50) } : {}),
         }));
     }
 
