@@ -403,11 +403,12 @@ interface Violation {
   categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng ca không báo trước"
   severity?: ViolationSeverity;
   status?: ViolationStatus;
-  location?: string;          // Nhà học / địa điểm xảy ra sự việc
+  location?: string;          // Địa điểm xảy ra sự việc
   reportedByName?: string;    // Người lập báo cáo
   roleInShift?: string;       // Vai trò trong ca tại thời điểm vi phạm
   directContact?: boolean;    // Đã trao đổi trực tiếp với đương sự hay chưa
   description?: string;       // Mô tả diễn biến sự việc (chi tiết)
+  handlingSuggestion?: string; // Gợi ý xử lý riêng cho báo cáo này, do Admin/Leader ghi khi lập vi phạm
 }
 
 interface Member {
@@ -2378,6 +2379,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [formDirectContact, setFormDirectContact] = useState(true);
   const [formNote, setFormNote] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [formHandlingSuggestion, setFormHandlingSuggestion] = useState('');
   const [formError, setFormError] = useState('');
 
   // Nguồn dữ liệu: Admin/Leader thấy toàn bộ nhân sự, Thành viên chỉ thấy vi phạm của chính mình.
@@ -2460,6 +2462,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     setFormDirectContact(true);
     setFormNote('');
     setFormDescription('');
+    setFormHandlingSuggestion('');
     setFormError('');
   };
 
@@ -2508,6 +2511,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       roleInShift: formRoleInShift.trim() || undefined,
       directContact: formDirectContact,
       description: formDescription.trim() || undefined,
+      handlingSuggestion: formHandlingSuggestion.trim() || undefined,
     };
     const updatedMember: Member = { ...targetMember, violations: [newViolation, ...(targetMember.violations || [])] };
     onSaveMember(updatedMember);
@@ -2757,7 +2761,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 {v.location && (
                   <div className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    Nhà học: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.location}</span>
+                    Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.location}</span>
                   </div>
                 )}
                 {v.reportedByName && (
@@ -2906,6 +2910,15 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 </div>
               )}
 
+              {detailRow.violation.handlingSuggestion && (
+                <div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Gợi ý xử lý</div>
+                  <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-3.5 text-xs text-slate-700 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-slate-300">
+                    {detailRow.violation.handlingSuggestion}
+                  </div>
+                </div>
+              )}
+
               {detailRow.violation.taskId && onOpenTaskDetail && (
                 <button
                   type="button"
@@ -3018,7 +3031,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   type="text"
                   value={formCategoryText}
                   onChange={(e) => setFormCategoryText(e.target.value)}
-                  placeholder="VD: Vắng ca không báo trước, trễ hạn công việc..."
+                  placeholder="VD: Vắng không báo trước, trễ hạn công việc..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
@@ -3050,7 +3063,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     type="text"
                     value={formLocation}
                     onChange={(e) => setFormLocation(e.target.value)}
-                    placeholder="VD: Phòng COR, Nhóm A..."
+                    placeholder="VD: Quán Cafe, Nhóm A..."
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -3060,7 +3073,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     type="text"
                     value={formRoleInShift}
                     onChange={(e) => setFormRoleInShift(e.target.value)}
-                    placeholder="VD: Trong ca, Trực chính..."
+                    placeholder="VD: Thành viên..."
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -3084,6 +3097,17 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   onChange={(e) => setFormDescription(e.target.value)}
                   rows={3}
                   placeholder="Mô tả chi tiết diễn biến sự việc..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Gợi ý xử lý (tuỳ chọn)</label>
+                <textarea
+                  value={formHandlingSuggestion}
+                  onChange={(e) => setFormHandlingSuggestion(e.target.value)}
+                  rows={2}
+                  placeholder="VD: Nhắc nhở bằng văn bản, theo dõi thêm 2 tuần..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
@@ -3405,7 +3429,7 @@ const MembersView: React.FC<MembersViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo tên, mã NV, SĐT, email, nhóm..."
+            placeholder="Tìm theo tên, mã, SĐT, email, nhóm..."
             className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200/60 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-sky-900/40"
           />
         </div>
@@ -5212,7 +5236,7 @@ const MemberModal: React.FC<MemberModalProps> = ({
     if (!email.trim()) {
       newErrors.email = 'Email không được để trống.';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      newErrors.email = 'Email không hợp lệ (vd: ten@workline.vn).';
+      newErrors.email = 'Email không hợp lệ (vd: ten@gmail.com).';
     } else {
       const duplicate = allMembers.find(
         (m) => m.email.toLowerCase() === email.trim().toLowerCase() && m.id !== member?.id
@@ -6913,7 +6937,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ten@workline.vn"
+                    placeholder="ten@gmail.com"
                     className="w-full rounded-xl border border-slate-700 bg-slate-800/80 py-2.5 pl-10 pr-3.5 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
@@ -6988,7 +7012,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     type="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="ten@workline.vn"
+                    placeholder="ten@gmail.com"
                     required
                     className="w-full rounded-xl border border-slate-700 bg-slate-800/80 py-2.5 pl-10 pr-3.5 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
