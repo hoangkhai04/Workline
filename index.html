@@ -2763,9 +2763,11 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Tiêu chí vi phạm (1):</div>
                   <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
-                        {v.categoryGroup} · {v.categoryCode}
-                      </span>
+                      {(v.categoryGroup || v.categoryCode) && (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                          {v.categoryGroup}{v.categoryGroup && v.categoryCode ? ' · ' : ''}{v.categoryCode}
+                        </span>
+                      )}
                       <span className="font-semibold text-slate-800 dark:text-slate-100">{v.categoryLabel}</span>
                     </div>
                     <div className="mt-1.5 text-slate-600 dark:text-slate-300">
@@ -2860,9 +2862,11 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Tiêu chí vi phạm</div>
                   <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
-                        {detailRow.violation.categoryGroup} · {detailRow.violation.categoryCode}
-                      </span>
+                      {(detailRow.violation.categoryGroup || detailRow.violation.categoryCode) && (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                          {detailRow.violation.categoryGroup}{detailRow.violation.categoryGroup && detailRow.violation.categoryCode ? ' · ' : ''}{detailRow.violation.categoryCode}
+                        </span>
+                      )}
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${violationSeverityMeta(detailRow.violation).badge}`}>
                         {violationSeverityMeta(detailRow.violation).label}
                       </span>
