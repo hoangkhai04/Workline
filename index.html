@@ -2869,8 +2869,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   {isAdminOrLeader && <div>Nhân sự: <span className="font-semibold text-slate-800 dark:text-slate-100">{displayNameOf(detailRow.member)}</span></div>}
                   {detailRow.violation.location && (
                     <div>
-                      Nhà học: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.location}</span>
-                      <span className="ml-1.5 text-[10px] font-medium text-rose-500 dark:text-rose-400">Mục này sẽ là địa điểm</span>
+                      Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.location}</span>
                     </div>
                   )}
                   {detailRow.violation.reportedByName && <div>Người lập báo cáo: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.reportedByName}</span></div>}
