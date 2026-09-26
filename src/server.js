@@ -8,6 +8,7 @@ const memberRoutes = require('./routes/members');
 const taskRoutes = require('./routes/tasks');
 const notificationRoutes = require('./routes/notifications');
 const pushRoutes = require('./routes/push');
+const { startReminderScheduler } = require('./services/reminderScheduler');
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
@@ -40,4 +41,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Workline server đang chạy tại http://localhost:${PORT}`);
+  startReminderScheduler();
 });

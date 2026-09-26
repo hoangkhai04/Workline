@@ -55,4 +55,4 @@ async function pushForNotifications(requester, created) {
   }
 }
 
-module.exports = { pushForNotifications, enabled };
+module.exports = { pushForNotifications, enabled, sendToMember };

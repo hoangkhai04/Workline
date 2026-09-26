@@ -297,4 +297,44 @@ router.post('/:id/resend-invite', requireAuth, requireRole('admin', 'leader'), a
   }
 });
 
+// ===== Cai dat nhac hen ca nhan (moi thanh vien tu thiet lap cho chinh minh) =====
+const ALLOWED_REMINDER_OFFSETS = [60, 180, 1440]; // 1 gio / 3 gio / 1 ngay
+
+// PUT /api/members/:id/reminder-settings - chi chinh chu tai khoan duoc sua, bat ke vai tro
+router.put('/:id/reminder-settings', requireAuth, async (req, res) => {
+  try {
+    if (req.user.id !== req.params.id) {
+      return res.status(403).json({ error: 'Bạn chỉ có thể tự thiết lập nhắc hẹn cho chính mình.' });
+    }
+    const target = await dataService.findMemberById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
+
+    const { dailyTime, beforeOffsets } = req.body || {};
+
+    let cleanDailyTime = null;
+    if (dailyTime) {
+      if (typeof dailyTime !== 'string' || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(dailyTime)) {
+        return res.status(400).json({ error: 'Giờ nhắc không hợp lệ (định dạng HH:mm).' });
+      }
+      cleanDailyTime = dailyTime;
+    }
+
+    let cleanOffsets = [];
+    if (Array.isArray(beforeOffsets)) {
+      cleanOffsets = [...new Set(beforeOffsets.map(Number))].filter((n) =>
+        ALLOWED_REMINDER_OFFSETS.includes(n)
+      );
+    }
+
+    const updated = await dataService.updateMember(target.id, {
+      reminderSettings: { dailyTime: cleanDailyTime, beforeOffsets: cleanOffsets },
+    });
+    const { passwordHash, ...safeMember } = updated;
+    return res.json({ member: safeMember });
+  } catch (err) {
+    console.error('Update reminder settings error:', err);
+    return res.status(500).json({ error: 'Có lỗi xảy ra khi lưu cài đặt nhắc hẹn.' });
+  }
+});
+
 module.exports = router;

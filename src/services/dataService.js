@@ -225,7 +225,31 @@ async function getPushSubscriptionsFor(memberId) {
   const db = await readDb();
   return (db.pushSubscriptions || []).filter((s) => s.memberId === memberId);
 }
+// ===== Nhac hen (reminder log) =====
+// Dung de chong gui lap lai cung 1 nhac hen (nhac hang ngay / nhac truoc han).
+async function getReminderLogKeys() {
+  const db = await readDb();
+  return new Set((db.reminderLog || []).map((r) => r.key));
+}
 
+async function appendReminderLogKeys(keys) {
+  if (!keys || keys.length === 0) return;
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.reminderLog = db.reminderLog || [];
+    const now = new Date().toISOString();
+    for (const key of keys) {
+      db.reminderLog.push({ key, sentAt: now });
+    }
+    // Don dep: chi giu ban ghi trong 35 ngay gan nhat (du cho nhac "truoc 1 ngay")
+    const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
+    db.reminderLog = db.reminderLog.filter((r) => {
+      const t = Date.parse(r.sentAt);
+      return !Number.isFinite(t) || t > cutoff;
+    });
+    await writeDb(db);
+  });
+}
 // ===== Task =====
 async function getAllTasks() {
   const db = await readDb();
@@ -268,7 +292,6 @@ async function deleteTask(id) {
     await writeDb(db);
   });
 }
-
 module.exports = {
   getAllMembers,
   findMemberByEmail,
@@ -293,4 +316,6 @@ module.exports = {
   savePushSubscription,
   removePushSubscription,
   getPushSubscriptionsFor,
+  getReminderLogKeys,
+  appendReminderLogKeys,
 };
