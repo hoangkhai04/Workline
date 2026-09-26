@@ -1,5 +1,17 @@
+// Tăng số này lên mỗi lần bạn thực sự muốn "đánh dấu" một bản deploy mới
+// (không bắt buộc phải làm, nhưng tiện để kiểm tra bằng DevTools > Application > Service Workers)
+const SW_VERSION = 'workline-sw-v2';
+
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+// Cho phép trang gọi postMessage({type:'SKIP_WAITING'}) để buộc SW mới activate ngay,
+// không cần đóng hết tab/cửa sổ rồi mở lại.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
