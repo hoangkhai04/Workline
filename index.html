@@ -363,7 +363,7 @@ body {
 
 <script type="text/plain" id="app-source">
 const { useState, useEffect, useRef } = React;
-const { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Bell, BellOff, Briefcase, Calendar, CalendarClock, Camera, Check, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Crown, Edit3, ExternalLink, Eye, EyeOff, FileText, Hash, Info, KeyRound, LayoutDashboard, Lock, LogOut, Mail, Menu, MessageSquare, Moon, Phone, Plus, RotateCw, Search, Send, Shield, ShieldAlert, Sparkles, Sun, Trash2, Upload, User, UserCheck, UserX, Users, X } = window.LucideIcons;
+const { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Bell, BellOff, Briefcase, Calendar, CalendarClock, Camera, Check, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Crown, Edit3, ExternalLink, Eye, EyeOff, FileText, Hash, Info, KeyRound, LayoutDashboard, Lock, LogOut, Mail, MapPin, Menu, MessageSquare, Moon, Phone, Plus, RotateCw, Search, Send, Shield, ShieldAlert, Sparkles, Sun, Trash2, Upload, User, UserCheck, UserX, Users, X } = window.LucideIcons;
 const { StrictMode } = React;
 
 // Doi URL nay thanh dia chi server that sau khi ban deploy (xem README workline-server)
@@ -415,6 +415,7 @@ interface Member {
   theme?: 'light' | 'dark';
   createdBy?: string;
   createdByName?: string;
+  disciplineNote?: string; // Gợi ý xử lý do Admin/Leader tự ghi (ghi đè gợi ý tự động)
 }
 
 type TaskType = 'chung' | 'phutrach';
@@ -2403,7 +2404,33 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
 
   const attendanceScore = focusMember ? computeAttendanceScore(focusMember) : null;
   const statusInfo = focusMember ? attendanceStatusInfo(focusMember) : null;
-  const suggestion = focusMember ? violationDisciplineSuggestion(focusMember) : null;
+  const autoSuggestion = focusMember ? violationDisciplineSuggestion(focusMember) : null;
+  // Gợi ý xử lý: ưu tiên nội dung Admin/Leader tự ghi (disciplineNote), nếu chưa có thì dùng gợi ý tự động.
+  const suggestion = focusMember ? (focusMember.disciplineNote?.trim() || autoSuggestion) : null;
+
+  const [isEditingSuggestion, setIsEditingSuggestion] = useState(false);
+  const [suggestionDraft, setSuggestionDraft] = useState('');
+
+  const openEditSuggestion = () => {
+    setSuggestionDraft(focusMember?.disciplineNote?.trim() || '');
+    setIsEditingSuggestion(true);
+  };
+
+  const cancelEditSuggestion = () => {
+    setIsEditingSuggestion(false);
+    setSuggestionDraft('');
+  };
+
+  const saveEditSuggestion = () => {
+    if (!focusMember) return;
+    onSaveMember({ ...focusMember, disciplineNote: suggestionDraft.trim() || undefined });
+    setIsEditingSuggestion(false);
+  };
+
+  useEffect(() => {
+    setIsEditingSuggestion(false);
+    setSuggestionDraft('');
+  }, [focusMember?.id]);
 
   const resetForm = () => {
     setFormMemberId(isAdminOrLeader ? '' : currentUser.id);
@@ -2550,13 +2577,55 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
           <div className="mt-1 text-[11px] text-slate-400">Mỗi vi phạm đã xác nhận trừ 5% trên tổng 100%</div>
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Gợi ý xử lý
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Gợi ý xử lý
+            </div>
+            {isAdminOrLeader && focusMember && !isEditingSuggestion && (
+              <button
+                type="button"
+                onClick={openEditSuggestion}
+                className="glacier-icon-bounce rounded-lg p-1 text-slate-400 hover:bg-sky-100 hover:text-sky-600 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                title="Chỉnh sửa gợi ý xử lý"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
-          <div className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-100">
-            {suggestion || 'Chọn một nhân sự để xem gợi ý xử lý'}
+          {isEditingSuggestion ? (
+            <div className="mt-2 space-y-2">
+              <textarea
+                value={suggestionDraft}
+                onChange={(e) => setSuggestionDraft(e.target.value)}
+                rows={3}
+                placeholder="Nhập gợi ý xử lý cho nhân sự này..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={cancelEditSuggestion}
+                  className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  onClick={saveEditSuggestion}
+                  className="glacier-btn-bounce rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
+                >
+                  Lưu
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-100">
+              {suggestion || 'Chọn một nhân sự để xem gợi ý xử lý'}
+            </div>
+          )}
+          <div className="mt-1 text-[11px] text-slate-400">
+            {isAdminOrLeader ? 'Chỉ Admin/Leader được ghi gợi ý xử lý' : 'Gợi ý xử lý do Admin/Leader ghi nhận'}
           </div>
-          <div className="mt-1 text-[11px] text-slate-400">Gợi ý xử lý do Admin/Leader ghi nhận</div>
         </div>
       </div>
 
@@ -2665,18 +2734,21 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
-                <div className="text-slate-500 dark:text-slate-400">
+              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs">
+                <div className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                  <Calendar className="h-3.5 w-3.5 shrink-0" />
                   Thời điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{fmtDate(v.date)}</span>
                 </div>
                 {v.location && (
-                  <div className="text-slate-500 dark:text-slate-400">
+                  <div className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
                     Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.location}</span>
                   </div>
                 )}
                 {v.reportedByName && (
-                  <div className="text-slate-500 dark:text-slate-400">
-                    Người lập báo cáo: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.reportedByName}</span>
+                  <div className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                    <User className="h-3.5 w-3.5 shrink-0" />
+                    Người lập: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.reportedByName}</span>
                   </div>
                 )}
                 {v.roleInShift && (
@@ -2687,15 +2759,18 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
               </div>
 
               {v.categoryLabel && (
-                <div className="mt-3 rounded-xl border border-rose-100 bg-rose-50/40 p-3 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
-                      {v.categoryGroup} · {v.categoryCode}
-                    </span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-100">{v.categoryLabel}</span>
-                  </div>
-                  <div className="mt-1.5 text-slate-600 dark:text-slate-300">
-                    <span className="font-semibold text-rose-700 dark:text-rose-400">Ghi chú: </span>{v.note}
+                <div className="mt-3">
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Tiêu chí vi phạm (1):</div>
+                  <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                        {v.categoryGroup} · {v.categoryCode}
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">{v.categoryLabel}</span>
+                    </div>
+                    <div className="mt-1.5 text-slate-600 dark:text-slate-300">
+                      <span className="font-semibold text-rose-700 dark:text-rose-400">Ghi chú: </span>{v.note}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2708,7 +2783,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
 
               {v.description && (
                 <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
-                  <span className="font-semibold text-slate-500 dark:text-slate-400">Diễn biến sự việc: </span>{v.description}
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">Mô tả sự việc: </span>{v.description}
                 </div>
               )}
 
