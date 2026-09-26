@@ -2836,7 +2836,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [dailyEnabled, setDailyEnabled] = useState(Boolean(currentUser.reminderSettings?.dailyTime));
   const [dailyTime, setDailyTime] = useState(currentUser.reminderSettings?.dailyTime || '08:00');
   const [beforeOffsets, setBeforeOffsets] = useState(currentUser.reminderSettings?.beforeOffsets || []);
-  const [savingReminder, setSavingReminder] = useState(false);
   const [dailyRules, setDailyRules] = useState(currentUser.reminderSettings?.dailyRules || []);
   const [hourRules, setHourRules] = useState(currentUser.reminderSettings?.hourRules || []);
   const [savingReminder, setSavingReminder] = useState(false);
