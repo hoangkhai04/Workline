@@ -495,6 +495,50 @@ function suggestedDisplayName(fullName: string): string {
   return parts.slice(-2).join(' ');
 }
 
+// Tu dong bien URL trong van ban thanh lien ket bam duoc (dung cho Chi tiet cong viec & Trao doi/binh luan)
+function linkifyText(text?: string) {
+  if (!text) return text;
+  const urlRegex = /(https?:\/\/[^\s<>"')\]]+|www\.[^\s<>"')\]]+)/gi;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    let url = match[0];
+    // Cat cac dau cau bam dinh o cuoi (dau cham, phay, dong ngoac...) ra khoi link
+    const trailingMatch = url.match(/[.,;:!?)\]]+$/);
+    let trailing = '';
+    if (trailingMatch) {
+      trailing = trailingMatch[0];
+      url = url.slice(0, url.length - trailing.length);
+    }
+    const href = url.toLowerCase().startsWith('www.') ? 'https://' + url : url;
+    nodes.push(
+      <a
+        key={'link-' + key++}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-sky-600 dark:text-cyan-400 underline underline-offset-2 hover:text-sky-700 dark:hover:text-cyan-300 break-all"
+      >
+        {url}
+      </a>
+    );
+    if (trailing) nodes.push(trailing);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+  return nodes;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -3866,7 +3910,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
           Chi tiết / Yêu cầu công việc
         </h3>
         <div className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-line leading-relaxed">
-          {task.detail || 'Không có mô tả chi tiết.'}
+          {task.detail ? linkifyText(task.detail) : 'Không có mô tả chi tiết.'}
         </div>
       </div>
 
@@ -3946,7 +3990,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                     </span>
                   )}
                   <p className="text-slate-800 dark:text-slate-200 whitespace-pre-line leading-relaxed">
-                    {u.text}
+                    {linkifyText(u.text)}
                   </p>
                 </div>
               </div>
