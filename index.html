@@ -888,11 +888,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <ShieldAlert className="h-4 w-4 text-cyan-400" />
                 {isAdminOrLeader ? 'Vi phạm nhân sự' : 'Vi phạm của tôi'}
-                {!isAdminOrLeader && (currentUser.violations || []).length > 0 && (
-                  <span className="ml-auto rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    {(currentUser.violations || []).length}
-                  </span>
-                )}
               </button>
             </div>
           </div>
@@ -2356,8 +2351,10 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
 
   // New violation form state
   const [formMemberId, setFormMemberId] = useState('');
+  const [formMemberQuery, setFormMemberQuery] = useState('');
+  const [showMemberSuggestions, setShowMemberSuggestions] = useState(false);
   const [formDate, setFormDate] = useState(todayIso());
-  const [formCategoryCode, setFormCategoryCode] = useState(VIOLATION_CATEGORIES[0].code);
+  const [formCategoryText, setFormCategoryText] = useState('');
   const [formSeverity, setFormSeverity] = useState<ViolationSeverity>('trungbinh');
   const [formStatus, setFormStatus] = useState<ViolationStatus>('xac_nhan');
   const [formLocation, setFormLocation] = useState('');
@@ -2410,9 +2407,11 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
 
   const resetForm = () => {
     setFormMemberId(isAdminOrLeader ? '' : currentUser.id);
+    setFormMemberQuery(isAdminOrLeader ? '' : displayNameOf(currentUser));
+    setShowMemberSuggestions(false);
     setFormDate(todayIso());
-    setFormCategoryCode(VIOLATION_CATEGORIES[0].code);
-    setFormSeverity(VIOLATION_CATEGORIES[0].defaultSeverity);
+    setFormCategoryText('');
+    setFormSeverity('trungbinh');
     setFormStatus('xac_nhan');
     setFormLocation('');
     setFormRoleInShift('');
@@ -2427,32 +2426,39 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     setIsAddOpen(true);
   };
 
-  const handleCategoryChange = (code: string) => {
-    setFormCategoryCode(code);
-    const cat = VIOLATION_CATEGORIES.find((c) => c.code === code);
-    if (cat) setFormSeverity(cat.defaultSeverity);
+  // Gợi ý nhân sự theo tên khi gõ tìm kiếm trong ô "Nhân sự vi phạm"
+  const filteredMemberSuggestions = members.filter((m) => {
+    const q = formMemberQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      displayNameOf(m).toLowerCase().includes(q) ||
+      (m.code || '').toLowerCase().includes(q)
+    );
+  });
+
+  const handleSelectMemberSuggestion = (m: Member) => {
+    setFormMemberId(m.id);
+    setFormMemberQuery(displayNameOf(m));
+    setShowMemberSuggestions(false);
   };
 
   const handleSubmitViolation = () => {
     const targetMember = members.find((m) => m.id === formMemberId);
     if (!targetMember) {
-      setFormError('Vui lòng chọn nhân sự vi phạm.');
+      setFormError('Vui lòng gõ tìm và chọn nhân sự vi phạm.');
       return;
     }
     if (!formDate || !formNote.trim()) {
       setFormError('Vui lòng chọn ngày và nhập ghi chú ngắn gọn về vi phạm.');
       return;
     }
-    const cat = VIOLATION_CATEGORIES.find((c) => c.code === formCategoryCode);
     const existingCount = (targetMember.violations || []).length;
     const newViolation: Violation = {
       id: 'v' + Date.now(),
       date: formDate,
       note: formNote.trim(),
       code: generateViolationCode(existingCount),
-      categoryCode: cat?.code,
-      categoryGroup: cat?.group,
-      categoryLabel: cat?.label,
+      categoryLabel: formCategoryText.trim() || undefined,
       severity: formSeverity,
       status: formStatus,
       location: formLocation.trim() || undefined,
@@ -2521,7 +2527,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {focusMember ? `Điểm chuyên cần${memberFilter !== 'all' ? ` — ${displayNameOf(focusMember)}` : ''}` : 'Điểm chuyên cần'}
+            {focusMember ? `Điểm chuyên cần${isAdminOrLeader && memberFilter !== 'all' ? ` — ${displayNameOf(focusMember)}` : ''}` : 'Điểm chuyên cần'}
           </div>
           {focusMember ? (
             <>
@@ -2550,6 +2556,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
           <div className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-100">
             {suggestion || 'Chọn một nhân sự để xem gợi ý xử lý'}
           </div>
+          <div className="mt-1 text-[11px] text-slate-400">Gợi ý xử lý do Admin/Leader ghi nhận</div>
         </div>
       </div>
 
@@ -2844,18 +2851,42 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-sm">
-              <div>
+              <div className="relative">
                 <label className="block text-[11px] font-medium text-slate-500 mb-1">Nhân sự vi phạm</label>
-                <select
-                  value={formMemberId}
-                  onChange={(e) => setFormMemberId(e.target.value)}
+                <input
+                  type="text"
+                  value={formMemberQuery}
+                  onChange={(e) => {
+                    setFormMemberQuery(e.target.value);
+                    setFormMemberId('');
+                    setShowMemberSuggestions(true);
+                  }}
+                  onFocus={() => setShowMemberSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowMemberSuggestions(false), 150)}
+                  placeholder="Gõ để tìm kiếm tên nhân sự..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                >
-                  <option value="">— Chọn nhân sự —</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>{displayNameOf(m)} ({m.code || 'NV'})</option>
-                  ))}
-                </select>
+                />
+                {showMemberSuggestions && filteredMemberSuggestions.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    {filteredMemberSuggestions.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleSelectMemberSuggestion(m)}
+                        className="glacier-row-bounce flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-sky-50 dark:hover:bg-slate-700"
+                      >
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{displayNameOf(m)}</span>
+                        <span className="text-slate-400">{m.code || 'NV'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showMemberSuggestions && formMemberQuery.trim() && filteredMemberSuggestions.length === 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-400 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    Không tìm thấy nhân sự phù hợp.
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2884,15 +2915,13 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-500 mb-1">Tiêu chí vi phạm</label>
-                <select
-                  value={formCategoryCode}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
+                <input
+                  type="text"
+                  value={formCategoryText}
+                  onChange={(e) => setFormCategoryText(e.target.value)}
+                  placeholder="VD: Vắng ca không báo trước, trễ hạn công việc..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                >
-                  {VIOLATION_CATEGORIES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.group} · {c.code} — {c.label}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
