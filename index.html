@@ -2833,9 +2833,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
   // Push notifications
   const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushEnabled));
-  const [dailyEnabled, setDailyEnabled] = useState(Boolean(currentUser.reminderSettings?.dailyTime));
-  const [dailyTime, setDailyTime] = useState(currentUser.reminderSettings?.dailyTime || '08:00');
-  const [beforeOffsets, setBeforeOffsets] = useState(currentUser.reminderSettings?.beforeOffsets || []);
   const [dailyRules, setDailyRules] = useState(currentUser.reminderSettings?.dailyRules || []);
   const [hourRules, setHourRules] = useState(currentUser.reminderSettings?.hourRules || []);
   const [savingReminder, setSavingReminder] = useState(false);
@@ -2846,9 +2843,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setPhone(currentUser.phone || '');
     setAvatarUrl(currentUser.avatarUrl);
     setPushEnabled(Boolean(currentUser.pushEnabled));
-    setDailyEnabled(Boolean(currentUser.reminderSettings?.dailyTime));
-    setDailyTime(currentUser.reminderSettings?.dailyTime || '08:00');
-    setBeforeOffsets(currentUser.reminderSettings?.beforeOffsets || []);
     setDailyRules(currentUser.reminderSettings?.dailyRules || []);
     setHourRules(currentUser.reminderSettings?.hourRules || []);
   }, [currentUser]);
@@ -2880,27 +2874,6 @@ const handleSaveReminder = async () => {
   setSavingReminder(true);
   try {
     await onSaveReminderSettings({ dailyRules, hourRules });
-  } finally {
-    setSavingReminder(false);
-  }
-};
-const REMINDER_OFFSET_OPTIONS = [
-  { value: 60, label: '1 giờ' },
-  { value: 180, label: '3 giờ' },
-  { value: 1440, label: '1 ngày' },
-];
-
-const toggleOffset = (val) => {
-  setBeforeOffsets((prev) => (prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]));
-};
-
-const handleSaveReminder = async () => {
-  setSavingReminder(true);
-  try {
-    await onSaveReminderSettings({
-      dailyTime: dailyEnabled ? dailyTime : null,
-      beforeOffsets,
-    });
   } finally {
     setSavingReminder(false);
   }
