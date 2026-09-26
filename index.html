@@ -2833,8 +2833,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
   // Push notifications
   const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushEnabled));
-  const [dailyRules, setDailyRules] = useState(currentUser.reminderSettings?.dailyRules || []);
-  const [hourRules, setHourRules] = useState(currentUser.reminderSettings?.hourRules || []);
+  const existingDailyRule = (currentUser.reminderSettings?.dailyRules || [])[0];
+  const existingHourRule = (currentUser.reminderSettings?.hourRules || [])[0];
+  const [dailyEnabled, setDailyEnabled] = useState(Boolean(existingDailyRule));
+  const [dailyDaysBefore, setDailyDaysBefore] = useState(existingDailyRule ? existingDailyRule.daysBefore : 0);
+  const [dailyTime, setDailyTime] = useState(existingDailyRule ? existingDailyRule.time : '08:00');
+  const [hourEnabled, setHourEnabled] = useState(Boolean(existingHourRule));
+  const [hoursBefore, setHoursBefore] = useState(existingHourRule ? existingHourRule.hoursBefore : 1);
   const [savingReminder, setSavingReminder] = useState(false);
 
   useEffect(() => {
@@ -2843,37 +2848,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setPhone(currentUser.phone || '');
     setAvatarUrl(currentUser.avatarUrl);
     setPushEnabled(Boolean(currentUser.pushEnabled));
-    setDailyRules(currentUser.reminderSettings?.dailyRules || []);
-    setHourRules(currentUser.reminderSettings?.hourRules || []);
+    const dRule = (currentUser.reminderSettings?.dailyRules || [])[0];
+    const hRule = (currentUser.reminderSettings?.hourRules || [])[0];
+    setDailyEnabled(Boolean(dRule));
+    setDailyDaysBefore(dRule ? dRule.daysBefore : 0);
+    setDailyTime(dRule ? dRule.time : '08:00');
+    setHourEnabled(Boolean(hRule));
+    setHoursBefore(hRule ? hRule.hoursBefore : 1);
   }, [currentUser]);
-const handleAddDailyRule = () => {
-  if (dailyRules.length >= 8) return;
-  setDailyRules((prev) => [...prev, { daysBefore: 1, time: '08:00' }]);
-};
-const handleRemoveDailyRule = (index) => {
-  setDailyRules((prev) => prev.filter((_, i) => i !== index));
-};
-const handleChangeDailyRule = (index, field, value) => {
-  setDailyRules((prev) =>
-    prev.map((r, i) => (i === index ? { ...r, [field]: field === 'daysBefore' ? Number(value) : value } : r))
-  );
-};
-
-const handleAddHourRule = () => {
-  if (hourRules.length >= 8) return;
-  setHourRules((prev) => [...prev, { hoursBefore: 1 }]);
-};
-const handleRemoveHourRule = (index) => {
-  setHourRules((prev) => prev.filter((_, i) => i !== index));
-};
-const handleChangeHourRule = (index, value) => {
-  setHourRules((prev) => prev.map((r, i) => (i === index ? { ...r, hoursBefore: Number(value) } : r)));
-};
 
 const handleSaveReminder = async () => {
   setSavingReminder(true);
   try {
-    await onSaveReminderSettings({ dailyRules, hourRules });
+    await onSaveReminderSettings({
+      dailyRules: dailyEnabled ? [{ daysBefore: Number(dailyDaysBefore), time: dailyTime }] : [],
+      hourRules: hourEnabled ? [{ hoursBefore: Number(hoursBefore) }] : [],
+    });
   } finally {
     setSavingReminder(false);
   }
@@ -3094,111 +3084,76 @@ const handleSaveReminder = async () => {
 
   {/* Nhắc hằng ngày (gộp theo ngày đến hạn) */}
   <div>
-    <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">
-      Nhắc hằng ngày (gộp các task cùng ngày đến hạn)
-    </div>
-    <div className="space-y-3">
-      {dailyRules.map((rule, index) => (
-        <div
-          key={index}
-          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
-            <input
-              type="number"
-              min={0}
-              max={90}
-              value={rule.daysBefore}
-              onChange={(e) => handleChangeDailyRule(index, 'daysBefore', e.target.value)}
-              className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">ngày, lúc</span>
-            <input
-              type="time"
-              value={rule.time}
-              onChange={(e) => handleChangeDailyRule(index, 'time', e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => handleRemoveDailyRule(index)}
-            className="ml-auto glacier-icon-bounce rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-            title="Xoá lịch nhắc này"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
+    <label className="flex items-center gap-2.5 cursor-pointer select-none mb-3">
+      <input
+        type="checkbox"
+        checked={dailyEnabled}
+        onChange={(e) => setDailyEnabled(e.target.checked)}
+        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+      />
+      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+        Nhắc hằng ngày (gộp các task cùng ngày đến hạn)
+      </span>
+    </label>
 
-      {dailyRules.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 py-4 text-center text-xs text-slate-400">
-          Chưa có lịch nhắc hằng ngày nào.
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={handleAddDailyRule}
-        disabled={dailyRules.length >= 8}
-        className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3.5 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Thêm lịch nhắc hằng ngày
-      </button>
+    <div
+      className={
+        'flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60 transition-opacity ' +
+        (dailyEnabled ? '' : 'opacity-40 pointer-events-none')
+      }
+    >
+      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
+      <input
+        type="number"
+        min={0}
+        max={90}
+        value={dailyDaysBefore}
+        onChange={(e) => setDailyDaysBefore(Number(e.target.value))}
+        disabled={!dailyEnabled}
+        className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      />
+      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">ngày, lúc</span>
+      <input
+        type="time"
+        value={dailyTime}
+        onChange={(e) => setDailyTime(e.target.value)}
+        disabled={!dailyEnabled}
+        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      />
     </div>
   </div>
 
   {/* Nhắc trước hạn theo giờ (tự thiết lập số giờ) */}
   <div>
-    <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">
-      Nhắc trước hạn (theo giờ)
-    </div>
-    <div className="space-y-3">
-      {hourRules.map((rule, index) => (
-        <div
-          key={index}
-          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
-            <input
-              type="number"
-              min={1}
-              max={168}
-              value={rule.hoursBefore}
-              onChange={(e) => handleChangeHourRule(index, e.target.value)}
-              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">giờ</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleRemoveHourRule(index)}
-            className="ml-auto glacier-icon-bounce rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-            title="Xoá lịch nhắc này"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
+    <label className="flex items-center gap-2.5 cursor-pointer select-none mb-3">
+      <input
+        type="checkbox"
+        checked={hourEnabled}
+        onChange={(e) => setHourEnabled(e.target.checked)}
+        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+      />
+      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+        Nhắc trước hạn (theo giờ)
+      </span>
+    </label>
 
-      {hourRules.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 py-4 text-center text-xs text-slate-400">
-          Chưa có lịch nhắc theo giờ nào.
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={handleAddHourRule}
-        disabled={hourRules.length >= 8}
-        className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3.5 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Thêm lịch nhắc theo giờ
-      </button>
+    <div
+      className={
+        'flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60 transition-opacity ' +
+        (hourEnabled ? '' : 'opacity-40 pointer-events-none')
+      }
+    >
+      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
+      <input
+        type="number"
+        min={1}
+        max={168}
+        value={hoursBefore}
+        onChange={(e) => setHoursBefore(Number(e.target.value))}
+        disabled={!hourEnabled}
+        className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      />
+      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">giờ</span>
     </div>
   </div>
 
