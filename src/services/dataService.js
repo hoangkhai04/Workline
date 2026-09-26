@@ -101,6 +101,10 @@ const MAX_NOTIFICATIONS = 2000;
 
 function isNotificationFor(n, member) {
   const to = String(n.to || '').toLowerCase();
+  if (to === 'all') return true;
+  if (to === 'leader' || to === 'leader@workline.vn') {
+    return member.role === 'leader';
+  }
   return to === String(member.id).toLowerCase() || (!!member.email && to === member.email.toLowerCase());
 }
 
