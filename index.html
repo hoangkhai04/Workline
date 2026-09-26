@@ -403,7 +403,7 @@ interface Violation {
   categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng ca không báo trước"
   severity?: ViolationSeverity;
   status?: ViolationStatus;
-  location?: string;          // Địa điểm / nhóm / khu vực xảy ra sự việc
+  location?: string;          // Nhà học / địa điểm xảy ra sự việc
   reportedByName?: string;    // Người lập báo cáo
   roleInShift?: string;       // Vai trò trong ca tại thời điểm vi phạm
   directContact?: boolean;    // Đã trao đổi trực tiếp với đương sự hay chưa
@@ -2757,7 +2757,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 {v.location && (
                   <div className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.location}</span>
+                    Nhà học: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.location}</span>
                   </div>
                 )}
                 {v.reportedByName && (
@@ -2863,7 +2863,12 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 <div className="grid grid-cols-1 gap-y-1.5 gap-x-4 text-xs sm:grid-cols-2">
                   <div>Thời điểm xảy ra: <span className="font-semibold text-slate-800 dark:text-slate-100">{fmtDate(detailRow.violation.date)}</span></div>
                   {isAdminOrLeader && <div>Nhân sự: <span className="font-semibold text-slate-800 dark:text-slate-100">{displayNameOf(detailRow.member)}</span></div>}
-                  {detailRow.violation.location && <div>Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.location}</span></div>}
+                  {detailRow.violation.location && (
+                    <div>
+                      Nhà học: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.location}</span>
+                      <span className="ml-1.5 text-[10px] font-medium text-rose-500 dark:text-rose-400">Mục này sẽ là địa điểm</span>
+                    </div>
+                  )}
                   {detailRow.violation.reportedByName && <div>Người lập báo cáo: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.reportedByName}</span></div>}
                   {detailRow.violation.roleInShift && <div>Vai trò trong ca: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.roleInShift}</span></div>}
                   {typeof detailRow.violation.directContact === 'boolean' && (
