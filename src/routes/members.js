@@ -300,6 +300,24 @@ router.post('/:id/resend-invite', requireAuth, requireRole('admin', 'leader'), a
 // ===== Cai dat nhac hen ca nhan (moi thanh vien tu thiet lap cho chinh minh) =====
 const ALLOWED_REMINDER_OFFSETS = [60, 180, 1440]; // 1 gio / 3 gio / 1 ngay
 
+// ===== Cai dat nhac hen ca nhan (moi thanh vien tu thiet lap cho chinh minh) =====
+const MAX_REMINDER_RULES = 8;
+
+function isValidDailyRule(r) {
+  return (
+    r &&
+    Number.isInteger(r.daysBefore) &&
+    r.daysBefore >= 0 &&
+    r.daysBefore <= 90 &&
+    typeof r.time === 'string' &&
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(r.time)
+  );
+}
+
+function isValidHourRule(r) {
+  return r && Number.isInteger(r.hoursBefore) && r.hoursBefore >= 1 && r.hoursBefore <= 168;
+}
+
 // PUT /api/members/:id/reminder-settings - chi chinh chu tai khoan duoc sua, bat ke vai tro
 router.put('/:id/reminder-settings', requireAuth, async (req, res) => {
   try {
@@ -309,25 +327,31 @@ router.put('/:id/reminder-settings', requireAuth, async (req, res) => {
     const target = await dataService.findMemberById(req.params.id);
     if (!target) return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
 
-    const { dailyTime, beforeOffsets } = req.body || {};
-
-    let cleanDailyTime = null;
-    if (dailyTime) {
-      if (typeof dailyTime !== 'string' || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(dailyTime)) {
-        return res.status(400).json({ error: 'Giờ nhắc không hợp lệ (định dạng HH:mm).' });
-      }
-      cleanDailyTime = dailyTime;
+    const { dailyRules, hourRules } = req.body || {};
+    if (!Array.isArray(dailyRules) || !Array.isArray(hourRules)) {
+      return res.status(400).json({ error: 'Dữ liệu cài đặt nhắc hẹn không hợp lệ.' });
+    }
+    if (dailyRules.length > MAX_REMINDER_RULES || hourRules.length > MAX_REMINDER_RULES) {
+      return res.status(400).json({ error: `Chỉ được tạo tối đa ${MAX_REMINDER_RULES} lịch nhắc mỗi loại.` });
     }
 
-    let cleanOffsets = [];
-    if (Array.isArray(beforeOffsets)) {
-      cleanOffsets = [...new Set(beforeOffsets.map(Number))].filter((n) =>
-        ALLOWED_REMINDER_OFFSETS.includes(n)
-      );
+    const cleanDailyRules = dailyRules.map((r) => ({
+      daysBefore: Number(r.daysBefore),
+      time: String(r.time || ''),
+    }));
+    if (cleanDailyRules.some((r) => !isValidDailyRule(r))) {
+      return res.status(400).json({ error: 'Lịch nhắc hằng ngày không hợp lệ (số ngày 0-90, giờ dạng HH:mm).' });
+    }
+
+    const cleanHourRules = hourRules.map((r) => ({
+      hoursBefore: Number(r.hoursBefore),
+    }));
+    if (cleanHourRules.some((r) => !isValidHourRule(r))) {
+      return res.status(400).json({ error: 'Lịch nhắc theo giờ không hợp lệ (1-168 giờ).' });
     }
 
     const updated = await dataService.updateMember(target.id, {
-      reminderSettings: { dailyTime: cleanDailyTime, beforeOffsets: cleanOffsets },
+      reminderSettings: { dailyRules: cleanDailyRules, hourRules: cleanHourRules },
     });
     const { passwordHash, ...safeMember } = updated;
     return res.json({ member: safeMember });

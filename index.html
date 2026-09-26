@@ -354,8 +354,8 @@ interface Member {
   violations: Violation[];
   pushEnabled?: boolean;
   reminderSettings?: {
-    dailyTime: string | null;
-    beforeOffsets: number[];
+    dailyRules: { daysBefore: number; time: string }[];
+    hourRules: { hoursBefore: number }[];
   };
   theme?: 'light' | 'dark';
   createdBy?: string;
@@ -2803,7 +2803,10 @@ interface ProfileViewProps {
   onToggleTheme?: (specificTheme?: 'light' | 'dark') => void;
   onUpdateProfile: (updated: Partial<Member>) => void;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
-  onSaveReminderSettings: (settings: { dailyTime: string | null; beforeOffsets: number[] }) => Promise<void>;
+  onSaveReminderSettings: (settings: {
+   dailyRules: { daysBefore: number; time: string }[];
+   hourRules: { hoursBefore: number }[];
+ }) => Promise<void>;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({
@@ -2834,6 +2837,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [dailyTime, setDailyTime] = useState(currentUser.reminderSettings?.dailyTime || '08:00');
   const [beforeOffsets, setBeforeOffsets] = useState(currentUser.reminderSettings?.beforeOffsets || []);
   const [savingReminder, setSavingReminder] = useState(false);
+  const [dailyRules, setDailyRules] = useState(currentUser.reminderSettings?.dailyRules || []);
+  const [hourRules, setHourRules] = useState(currentUser.reminderSettings?.hourRules || []);
+  const [savingReminder, setSavingReminder] = useState(false);
+
   useEffect(() => {
     setName(currentUser.name);
     setDisplayName(currentUser.displayName || suggestedDisplayName(currentUser.name));
@@ -2843,8 +2850,41 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setDailyEnabled(Boolean(currentUser.reminderSettings?.dailyTime));
     setDailyTime(currentUser.reminderSettings?.dailyTime || '08:00');
     setBeforeOffsets(currentUser.reminderSettings?.beforeOffsets || []);
+    setDailyRules(currentUser.reminderSettings?.dailyRules || []);
+    setHourRules(currentUser.reminderSettings?.hourRules || []);
   }, [currentUser]);
+const handleAddDailyRule = () => {
+  if (dailyRules.length >= 8) return;
+  setDailyRules((prev) => [...prev, { daysBefore: 1, time: '08:00' }]);
+};
+const handleRemoveDailyRule = (index) => {
+  setDailyRules((prev) => prev.filter((_, i) => i !== index));
+};
+const handleChangeDailyRule = (index, field, value) => {
+  setDailyRules((prev) =>
+    prev.map((r, i) => (i === index ? { ...r, [field]: field === 'daysBefore' ? Number(value) : value } : r))
+  );
+};
 
+const handleAddHourRule = () => {
+  if (hourRules.length >= 8) return;
+  setHourRules((prev) => [...prev, { hoursBefore: 1 }]);
+};
+const handleRemoveHourRule = (index) => {
+  setHourRules((prev) => prev.filter((_, i) => i !== index));
+};
+const handleChangeHourRule = (index, value) => {
+  setHourRules((prev) => prev.map((r, i) => (i === index ? { ...r, hoursBefore: Number(value) } : r)));
+};
+
+const handleSaveReminder = async () => {
+  setSavingReminder(true);
+  try {
+    await onSaveReminderSettings({ dailyRules, hourRules });
+  } finally {
+    setSavingReminder(false);
+  }
+};
 const REMINDER_OFFSET_OPTIONS = [
   { value: 60, label: '1 giờ' },
   { value: 180, label: '3 giờ' },
@@ -3069,72 +3109,137 @@ const handleSaveReminder = async () => {
       </div>
       
       {/* Reminder Settings Card */}
-<div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-  <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white mb-2">
-    <CalendarClock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-    Nhắc hẹn công việc
-  </h2>
-  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-    Nhận thông báo đẩy khi task sắp đến hạn hoặc đến hạn trong ngày. Cần bật "Thông báo đẩy" ở mục trên để nhắc hẹn hoạt động.
-  </p>
-
-  <div className="space-y-4">
-    <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60">
-      <div>
-        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Nhắc hằng ngày</div>
-        <div className="text-xs text-slate-500 dark:text-slate-400">Gộp các công việc đến hạn trong ngày vào 1 thông báo</div>
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="time"
-          value={dailyTime}
-          onChange={(e) => setDailyTime(e.target.value)}
-          disabled={!dailyEnabled}
-          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-40"
-        />
-        <button
-          type="button"
-          onClick={() => setDailyEnabled(!dailyEnabled)}
-          className={`glacier-btn-bounce rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer ${
-            dailyEnabled ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-          }`}
-        >
-          {dailyEnabled ? 'Đang bật' : 'Đang tắt'}
-        </button>
-      </div>
-    </div>
-
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60">
-      <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nhắc trước hạn</div>
-      <div className="flex flex-wrap gap-2">
-        {REMINDER_OFFSET_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => toggleOffset(opt.value)}
-            className={`glacier-pill-bounce rounded-full px-3.5 py-1.5 text-xs font-bold cursor-pointer border ${
-              beforeOffsets.includes(opt.value)
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-            }`}
-          >
-            Trước {opt.label}
-          </button>
-        ))}
-      </div>
-    </div>
-
-    <button
-      type="button"
-      onClick={handleSaveReminder}
-      disabled={savingReminder}
-      className="glacier-btn-bounce inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-60"
-    >
-      <Check className="h-4 w-4" />
-      {savingReminder ? 'Đang lưu...' : 'Lưu cài đặt nhắc hẹn'}
-    </button>
+<div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-6">
+  <div>
+    <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white mb-2">
+      <CalendarClock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+      Nhắc hẹn công việc
+    </h2>
+    <p className="text-sm text-slate-500 dark:text-slate-400">
+      Cần bật "Thông báo đẩy" ở mục trên để nhắc hẹn hoạt động.
+    </p>
   </div>
-</div> 
+
+  {/* Nhắc hằng ngày (gộp theo ngày đến hạn) */}
+  <div>
+    <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">
+      Nhắc hằng ngày (gộp các task cùng ngày đến hạn)
+    </div>
+    <div className="space-y-3">
+      {dailyRules.map((rule, index) => (
+        <div
+          key={index}
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
+            <input
+              type="number"
+              min={0}
+              max={90}
+              value={rule.daysBefore}
+              onChange={(e) => handleChangeDailyRule(index, 'daysBefore', e.target.value)}
+              className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">ngày, lúc</span>
+            <input
+              type="time"
+              value={rule.time}
+              onChange={(e) => handleChangeDailyRule(index, 'time', e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => handleRemoveDailyRule(index)}
+            className="ml-auto glacier-icon-bounce rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+            title="Xoá lịch nhắc này"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+
+      {dailyRules.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 py-4 text-center text-xs text-slate-400">
+          Chưa có lịch nhắc hằng ngày nào.
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleAddDailyRule}
+        disabled={dailyRules.length >= 8}
+        className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3.5 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Thêm lịch nhắc hằng ngày
+      </button>
+    </div>
+  </div>
+
+  {/* Nhắc trước hạn theo giờ (tự thiết lập số giờ) */}
+  <div>
+    <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">
+      Nhắc trước hạn (theo giờ)
+    </div>
+    <div className="space-y-3">
+      {hourRules.map((rule, index) => (
+        <div
+          key={index}
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/60"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Trước</span>
+            <input
+              type="number"
+              min={1}
+              max={168}
+              value={rule.hoursBefore}
+              onChange={(e) => handleChangeHourRule(index, e.target.value)}
+              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-center dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">giờ</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleRemoveHourRule(index)}
+            className="ml-auto glacier-icon-bounce rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+            title="Xoá lịch nhắc này"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+
+      {hourRules.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 py-4 text-center text-xs text-slate-400">
+          Chưa có lịch nhắc theo giờ nào.
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleAddHourRule}
+        disabled={hourRules.length >= 8}
+        className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3.5 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Thêm lịch nhắc theo giờ
+      </button>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={handleSaveReminder}
+    disabled={savingReminder}
+    className="glacier-btn-bounce inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-60"
+  >
+    <Check className="h-4 w-4" />
+    {savingReminder ? 'Đang lưu...' : 'Lưu cài đặt nhắc hẹn'}
+  </button>
+</div>
 
       {/* Push Notifications Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -6860,7 +6965,10 @@ function App() {
     setCurrentUser(newCurrent);
     setMembers((prev) => prev.map((m) => (m.id === currentUser.id ? newCurrent : m)));
   };
-  const handleSaveReminderSettings = async (settings: { dailyTime: string | null; beforeOffsets: number[] }) => {
+   const handleSaveReminderSettings = async (settings: {
+    dailyRules: { daysBefore: number; time: string }[];
+    hourRules: { hoursBefore: number }[];
+  }) => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/members/${currentUser.id}/reminder-settings`, {
       method: 'PUT',
