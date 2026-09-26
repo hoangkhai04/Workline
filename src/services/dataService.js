@@ -1,5 +1,22 @@
 const { readDb, writeDb } = require('../config/googleDrive');
 
+// ===== Khoa ghi toan cuc =====
+// TOAN BO thao tac doc-sua-ghi (members, reset tokens, OTP, notifications, tasks,
+// push subscriptions) deu phai di qua CUNG MOT hang doi nay. Ly do: readDb()/writeDb()
+// doc/ghi de len TOAN BO 1 file JSON duy nhat tren Google Drive, khong co optimistic
+// lock / ETag. Neu 2 request ghi khac nhau (vi du: "xoa thong bao" va "cap nhat ho so")
+// cung doc truoc khi cai truoc kip ghi xong, request ghi sau se de len ban cu va lam
+// "song lai" du lieu vua bi request truoc xoa/sua. Dung 1 khoa duy nhat cho MOI ham
+// ghi se dam bao khong co 2 thao tac doc-sua-ghi nao chong len nhau trong cung 1
+// tien trinh Node. (Luu y: neu server chay nhieu instance/process song song thi khoa
+// nay khong con tac dung nua - can chuyen sang database that co giao dich/lock that.)
+let dbLock = Promise.resolve();
+function withDbLock(fn) {
+  const run = dbLock.then(fn, fn);
+  dbLock = run.catch(() => {});
+  return run;
+}
+
 async function getAllMembers() {
   const db = await readDb();
   return db.members || [];
@@ -16,43 +33,51 @@ async function findMemberById(id) {
 }
 
 async function addMember(member) {
-  const db = await readDb();
-  db.members = db.members || [];
-  db.members.push(member);
-  await writeDb(db);
-  return member;
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.members = db.members || [];
+    db.members.push(member);
+    await writeDb(db);
+    return member;
+  });
 }
 
 async function updateMember(id, updates) {
-  const db = await readDb();
-  db.members = db.members || [];
-  const idx = db.members.findIndex((m) => m.id === id);
-  if (idx === -1) return null;
-  db.members[idx] = { ...db.members[idx], ...updates };
-  await writeDb(db);
-  return db.members[idx];
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.members = db.members || [];
+    const idx = db.members.findIndex((m) => m.id === id);
+    if (idx === -1) return null;
+    db.members[idx] = { ...db.members[idx], ...updates };
+    await writeDb(db);
+    return db.members[idx];
+  });
 }
 
 // Xoa thanh vien khoi Google Drive DB. Tra ve true neu co xoa (tim thay va da xoa),
 // false neu khong tim thay id do (de route co the tra 404 chinh xac).
 async function deleteMember(id) {
-  const db = await readDb();
-  db.members = db.members || [];
-  const before = db.members.length;
-  db.members = db.members.filter((m) => m.id !== id);
-  const removed = db.members.length !== before;
-  if (removed) await writeDb(db);
-  return removed;
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.members = db.members || [];
+    const before = db.members.length;
+    db.members = db.members.filter((m) => m.id !== id);
+    const removed = db.members.length !== before;
+    if (removed) await writeDb(db);
+    return removed;
+  });
 }
 
 async function saveResetToken(entry) {
-  const db = await readDb();
-  db.resetTokens = db.resetTokens || [];
-  // Xoa token cu cua cung 1 member truoc khi them token moi
-  db.resetTokens = db.resetTokens.filter((t) => t.memberId !== entry.memberId);
-  db.resetTokens.push(entry);
-  await writeDb(db);
-  return entry;
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.resetTokens = db.resetTokens || [];
+    // Xoa token cu cua cung 1 member truoc khi them token moi
+    db.resetTokens = db.resetTokens.filter((t) => t.memberId !== entry.memberId);
+    db.resetTokens.push(entry);
+    await writeDb(db);
+    return entry;
+  });
 }
 
 async function findResetToken(token) {
@@ -61,19 +86,23 @@ async function findResetToken(token) {
 }
 
 async function deleteResetToken(token) {
-  const db = await readDb();
-  db.resetTokens = (db.resetTokens || []).filter((t) => t.token !== token);
-  await writeDb(db);
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.resetTokens = (db.resetTokens || []).filter((t) => t.token !== token);
+    await writeDb(db);
+  });
 }
 
 // ===== OTP dat lai mat khau (ma 6 so) =====
 // Moi member chi co 1 OTP con hieu luc: { memberId, hash, salt, expiresAt, sentAt, attempts }
 async function saveResetOtp(entry) {
-  const db = await readDb();
-  db.resetOtps = (db.resetOtps || []).filter((o) => o.memberId !== entry.memberId);
-  db.resetOtps.push(entry);
-  await writeDb(db);
-  return entry;
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.resetOtps = (db.resetOtps || []).filter((o) => o.memberId !== entry.memberId);
+    db.resetOtps.push(entry);
+    await writeDb(db);
+    return entry;
+  });
 }
 
 async function findResetOtp(memberId) {
@@ -82,20 +111,25 @@ async function findResetOtp(memberId) {
 }
 
 async function updateResetOtp(memberId, updates) {
-  const db = await readDb();
-  db.resetOtps = db.resetOtps || [];
-  const idx = db.resetOtps.findIndex((o) => o.memberId === memberId);
-  if (idx === -1) return null;
-  db.resetOtps[idx] = { ...db.resetOtps[idx], ...updates };
-  await writeDb(db);
-  return db.resetOtps[idx];
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.resetOtps = db.resetOtps || [];
+    const idx = db.resetOtps.findIndex((o) => o.memberId === memberId);
+    if (idx === -1) return null;
+    db.resetOtps[idx] = { ...db.resetOtps[idx], ...updates };
+    await writeDb(db);
+    return db.resetOtps[idx];
+  });
 }
 
 async function deleteResetOtp(memberId) {
-  const db = await readDb();
-  db.resetOtps = (db.resetOtps || []).filter((o) => o.memberId !== memberId);
-  await writeDb(db);
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.resetOtps = (db.resetOtps || []).filter((o) => o.memberId !== memberId);
+    await writeDb(db);
+  });
 }
+
 // ===== Thong bao =====
 const MAX_NOTIFICATIONS = 2000;
 
@@ -123,7 +157,7 @@ function cleanNotification(n, requester) {
 }
 
 async function saveNotifications(requester, list) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     db.notifications = db.notifications || [];
     const created = [];
@@ -151,9 +185,10 @@ async function getNotificationsFor(member) {
   const db = await readDb();
   return (db.notifications || []).filter((n) => isNotificationFor(n, member));
 }
+
 // Chi xoa duoc thong bao gui cho chinh minh
 async function deleteNotifications(requester, ids) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     const before = (db.notifications || []).length;
     db.notifications = (db.notifications || []).filter(
@@ -165,7 +200,7 @@ async function deleteNotifications(requester, ids) {
 
 // ===== Push subscription =====
 async function savePushSubscription(memberId, sub) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     db.pushSubscriptions = (db.pushSubscriptions || []).filter((s) => s.endpoint !== sub.endpoint);
     db.pushSubscriptions.push({
@@ -179,7 +214,7 @@ async function savePushSubscription(memberId, sub) {
 }
 
 async function removePushSubscription(endpoint) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     db.pushSubscriptions = (db.pushSubscriptions || []).filter((s) => s.endpoint !== endpoint);
     await writeDb(db);
@@ -190,40 +225,8 @@ async function getPushSubscriptionsFor(memberId) {
   const db = await readDb();
   return (db.pushSubscriptions || []).filter((s) => s.memberId === memberId);
 }
-module.exports = {
-  getAllMembers,
-  findMemberByEmail,
-  findMemberById,
-  addMember,
-  updateMember,
-  deleteMember,
-  saveResetToken,
-  findResetToken,
-  deleteResetToken,
-  saveResetOtp,
-  findResetOtp,
-  updateResetOtp,
-  deleteResetOtp,
-  getAllTasks,
-  findTaskById,
-  upsertTask,
-  deleteTask,
-  getNotificationsFor,
-  saveNotifications,
-  deleteNotifications,
-    savePushSubscription,
-  removePushSubscription,
-  getPushSubscriptionsFor,
-};
-// ===== Task =====
-// Khoa tuan tu: cac thao tac ghi task lan luot, tranh 2 yeu cau cung doc-ghi file Drive mot luc
-let taskLock = Promise.resolve();
-function withTaskLock(fn) {
-  const run = taskLock.then(fn, fn);
-  taskLock = run.catch(() => {});
-  return run;
-}
 
+// ===== Task =====
 async function getAllTasks() {
   const db = await readDb();
   return db.tasks || [];
@@ -236,7 +239,7 @@ async function findTaskById(id) {
 
 // Them moi (server sinh ma TASK-001, 002...) hoac cap nhat neu id da ton tai
 async function upsertTask(task) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     db.tasks = db.tasks || [];
     const idx = db.tasks.findIndex((t) => t.id === task.id);
@@ -259,9 +262,35 @@ async function upsertTask(task) {
 }
 
 async function deleteTask(id) {
-  return withTaskLock(async () => {
+  return withDbLock(async () => {
     const db = await readDb();
     db.tasks = (db.tasks || []).filter((t) => t.id !== id);
     await writeDb(db);
   });
 }
+
+module.exports = {
+  getAllMembers,
+  findMemberByEmail,
+  findMemberById,
+  addMember,
+  updateMember,
+  deleteMember,
+  saveResetToken,
+  findResetToken,
+  deleteResetToken,
+  saveResetOtp,
+  findResetOtp,
+  updateResetOtp,
+  deleteResetOtp,
+  getAllTasks,
+  findTaskById,
+  upsertTask,
+  deleteTask,
+  getNotificationsFor,
+  saveNotifications,
+  deleteNotifications,
+  savePushSubscription,
+  removePushSubscription,
+  getPushSubscriptionsFor,
+};
