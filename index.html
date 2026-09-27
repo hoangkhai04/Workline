@@ -2427,20 +2427,35 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   // Nháp trạng thái & mức độ đang chỉnh trong popup "Chi tiết báo cáo" (Admin/Leader điều chỉnh rồi bấm
   // "Lưu thay đổi" mới áp dụng — không tự lưu ngay khi chọn). Các trường trong khối "Thông tin sự việc"
   // (thời điểm, nhân sự, địa điểm, người lập báo cáo, vai trò, trao đổi trực tiếp...) KHÔNG được chỉnh sửa ở đây.
+  // Ngoài trạng thái & mức độ, Admin/Leader còn chỉnh sửa được toàn bộ nội dung còn lại của báo cáo:
+  // tiêu chí vi phạm, ghi chú riêng, mô tả diễn biến sự việc và gợi ý xử lý.
   const [statusDraft, setStatusDraft] = useState<ViolationStatus>('xac_nhan');
   const [severityDraft, setSeverityDraft] = useState<ViolationSeverity>('trungbinh');
+  const [categoryLabelDraft, setCategoryLabelDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [handlingSuggestionDraft, setHandlingSuggestionDraft] = useState('');
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   useEffect(() => {
     setStatusDraft(detailRow?.violation.status || 'xac_nhan');
     setSeverityDraft(detailRow?.violation.severity || 'trungbinh');
+    setCategoryLabelDraft(detailRow?.violation.categoryLabel || '');
+    setNoteDraft(detailRow?.violation.note || '');
+    setDescriptionDraft(detailRow?.violation.description || '');
+    setHandlingSuggestionDraft(detailRow?.violation.handlingSuggestion || '');
   }, [detailRow?.violation.id]);
 
-  // Có thay đổi chưa lưu so với bản đã lưu trên server hay chưa (chỉ tính trạng thái & mức độ).
+  // Có thay đổi chưa lưu so với bản đã lưu trên server hay chưa (trạng thái, mức độ và toàn bộ nội dung
+  // chỉnh sửa được — không tính các trường thuộc "Thông tin sự việc" vì các trường đó không thể sửa).
   const hasDetailChanges =
     !!detailRow &&
     (statusDraft !== (detailRow.violation.status || 'xac_nhan') ||
-      severityDraft !== (detailRow.violation.severity || 'trungbinh'));
+      severityDraft !== (detailRow.violation.severity || 'trungbinh') ||
+      categoryLabelDraft.trim() !== (detailRow.violation.categoryLabel || '').trim() ||
+      noteDraft.trim() !== (detailRow.violation.note || '').trim() ||
+      descriptionDraft.trim() !== (detailRow.violation.description || '').trim() ||
+      handlingSuggestionDraft.trim() !== (detailRow.violation.handlingSuggestion || '').trim());
 
   // New violation form state
   const [formMemberId, setFormMemberId] = useState('');
@@ -2484,12 +2499,6 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     return matchesQ && matchesSeverity && matchesStatus && matchesMember;
   });
 
-  const thisYear = new Date().getFullYear();
-  const confirmedThisYear = allRows.filter(({ violation: v }) => {
-    const y = new Date(v.date.slice(0, 10)).getFullYear();
-    return y === thisYear && (v.status || 'xac_nhan') === 'xac_nhan';
-  }).length;
-
   // Với thành viên: theo dõi tình trạng & điểm chuyên cần của chính họ.
   // Với admin/leader: hiển thị số liệu tổng của toàn bộ phạm vi đang lọc (hoặc người đang chọn trong bộ lọc nhân sự).
   const focusMember: Member | undefined =
@@ -2498,6 +2507,13 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       : !isAdminOrLeader
       ? members.find((m) => m.id === currentUser.id) || currentUser
       : undefined;
+
+  // Tổng số vi phạm đã xác nhận — phản ánh ĐÚNG số lượng thực tế đã ghi nhận (không giới hạn theo năm):
+  // nếu đang chọn 1 nhân sự cụ thể (hoặc đang xem với vai trò Member) thì đếm toàn bộ vi phạm đã xác nhận
+  // của riêng người đó; nếu Admin/Leader đang xem "Tất cả nhân sự" thì đếm tổng trong toàn bộ phạm vi.
+  const confirmedViolationsCount = focusMember
+    ? countCountedViolations(focusMember)
+    : allRows.filter(({ violation: v }) => (v.status || 'xac_nhan') === 'xac_nhan').length;
 
   const attendanceScore = focusMember ? computeAttendanceScore(focusMember) : null;
   const statusInfo = focusMember ? attendanceStatusInfo(focusMember) : null;
@@ -2644,12 +2660,21 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     if (detailRow?.violation.id === violation.id) setDetailRow(null);
   };
 
-  // Admin/Leader điều chỉnh "trạng thái" và/hoặc "mức độ" của một ghi nhận vi phạm đã lưu, rồi bấm
-  // "Lưu thay đổi" để áp dụng — 2 bước rõ ràng: (1) chọn giá trị mới trong popup, (2) bấm Lưu thay đổi.
+  // Admin/Leader chỉnh sửa trạng thái, mức độ và toàn bộ nội dung còn lại của một báo cáo vi phạm đã lưu
+  // (trừ khối "Thông tin sự việc"), rồi bấm "Lưu thay đổi" để áp dụng — 2 bước rõ ràng: (1) chỉnh trong
+  // popup, (2) bấm Lưu thay đổi.
   const handleSaveDetailChanges = async () => {
     if (!detailRow || !hasDetailChanges) return;
     const { violation, member } = detailRow;
-    const updatedViolation: Violation = { ...violation, status: statusDraft, severity: severityDraft };
+    const updatedViolation: Violation = {
+      ...violation,
+      status: statusDraft,
+      severity: severityDraft,
+      categoryLabel: categoryLabelDraft.trim() || undefined,
+      note: noteDraft.trim() || violation.note,
+      description: descriptionDraft.trim() || undefined,
+      handlingSuggestion: handlingSuggestionDraft.trim() || undefined,
+    };
     const updatedMember: Member = {
       ...member,
       violations: (member.violations || []).map((v) => (v.id === violation.id ? updatedViolation : v)),
@@ -2697,10 +2722,10 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Vi phạm xác nhận
+            {focusMember ? `Vi phạm xác nhận${isAdminOrLeader && memberFilter !== 'all' ? ` — ${displayNameOf(focusMember)}` : ''}` : 'Vi phạm xác nhận'}
           </div>
           <div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">
-            {confirmedThisYear} <span className="text-sm font-semibold text-slate-400">lần ghi nhận</span>
+            {confirmedViolationsCount} <span className="text-sm font-semibold text-slate-400">lần ghi nhận</span>
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -3050,7 +3075,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
               </div>
               {isAdminOrLeader && (
                 <p className="text-[11px] text-slate-400">
-                  Chọn trạng thái / mức độ mới rồi bấm "Lưu thay đổi" ở cuối popup để áp dụng. Thông tin sự việc bên dưới không thể chỉnh sửa.
+                  Chỉnh nội dung bên dưới rồi bấm "Lưu thay đổi" ở cuối popup để áp dụng. Riêng khối "Thông tin sự việc" không thể chỉnh sửa.
                 </p>
               )}
 
@@ -3097,43 +3122,90 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 </div>
               </div>
 
-              {detailRow.violation.categoryLabel && (
-                <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Tiêu chí vi phạm</div>
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      {(detailRow.violation.categoryGroup || detailRow.violation.categoryCode) && (
-                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
-                          {detailRow.violation.categoryGroup}{detailRow.violation.categoryGroup && detailRow.violation.categoryCode ? ' · ' : ''}{detailRow.violation.categoryCode}
-                        </span>
-                      )}
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${violationSeverityMeta(detailRow.violation).badge}`}>
-                        {violationSeverityMeta(detailRow.violation).label}
+              <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Tiêu chí vi phạm</div>
+                {isAdminOrLeader ? (
+                  <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5 dark:border-rose-900/50 dark:bg-rose-950/20 space-y-2">
+                    {(detailRow.violation.categoryGroup || detailRow.violation.categoryCode) && (
+                      <span className="inline-block rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                        {detailRow.violation.categoryGroup}{detailRow.violation.categoryGroup && detailRow.violation.categoryCode ? ' · ' : ''}{detailRow.violation.categoryCode}
                       </span>
+                    )}
+                    <input
+                      type="text"
+                      value={categoryLabelDraft}
+                      onChange={(e) => setCategoryLabelDraft(e.target.value)}
+                      placeholder="VD: Vắng không báo trước, trễ hạn công việc..."
+                      className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-rose-400 dark:border-rose-900/60 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <div>
+                      <div className="mb-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">Ghi chú riêng</div>
+                      <textarea
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        rows={2}
+                        placeholder="Ghi chú ngắn gọn về vi phạm..."
+                        className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-rose-400 dark:border-rose-900/60 dark:bg-slate-900 dark:text-slate-300"
+                      />
                     </div>
-                    <div className="mt-1.5 font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.categoryLabel}</div>
-                    <div className="mt-1 text-slate-600 dark:text-slate-300">Ghi chú riêng: {detailRow.violation.note}</div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  detailRow.violation.categoryLabel && (
+                    <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        {(detailRow.violation.categoryGroup || detailRow.violation.categoryCode) && (
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                            {detailRow.violation.categoryGroup}{detailRow.violation.categoryGroup && detailRow.violation.categoryCode ? ' · ' : ''}{detailRow.violation.categoryCode}
+                          </span>
+                        )}
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${violationSeverityMeta(detailRow.violation).badge}`}>
+                          {violationSeverityMeta(detailRow.violation).label}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.categoryLabel}</div>
+                      <div className="mt-1 text-slate-600 dark:text-slate-300">Ghi chú riêng: {detailRow.violation.note}</div>
+                    </div>
+                  )
+                )}
+              </div>
 
-              {detailRow.violation.description && (
-                <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Mô tả diễn biến sự việc</div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
-                    {detailRow.violation.description}
-                  </div>
-                </div>
-              )}
+              <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Mô tả diễn biến sự việc</div>
+                {isAdminOrLeader ? (
+                  <textarea
+                    value={descriptionDraft}
+                    onChange={(e) => setDescriptionDraft(e.target.value)}
+                    rows={3}
+                    placeholder="Mô tả chi tiết diễn biến sự việc (tuỳ chọn)..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300"
+                  />
+                ) : (
+                  detailRow.violation.description && (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
+                      {detailRow.violation.description}
+                    </div>
+                  )
+                )}
+              </div>
 
-              {detailRow.violation.handlingSuggestion && (
-                <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Gợi ý xử lý</div>
-                  <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-3.5 text-xs text-slate-700 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-slate-300">
-                    {detailRow.violation.handlingSuggestion}
-                  </div>
-                </div>
-              )}
+              <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Gợi ý xử lý</div>
+                {isAdminOrLeader ? (
+                  <textarea
+                    value={handlingSuggestionDraft}
+                    onChange={(e) => setHandlingSuggestionDraft(e.target.value)}
+                    rows={2}
+                    placeholder="Gợi ý xử lý riêng cho báo cáo này (tuỳ chọn)..."
+                    className="w-full rounded-xl border border-sky-100 bg-sky-50/50 p-3.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-slate-300"
+                  />
+                ) : (
+                  detailRow.violation.handlingSuggestion && (
+                    <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-3.5 text-xs text-slate-700 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-slate-300">
+                      {detailRow.violation.handlingSuggestion}
+                    </div>
+                  )
+                )}
+              </div>
 
               {detailRow.violation.taskId && onOpenTaskDetail && (
                 <button
