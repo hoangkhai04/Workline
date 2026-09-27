@@ -660,8 +660,13 @@ function generateMemberCode(existingMembers: Member[]): string {
 
 // ==== Vi phạm & Chuyên cần: cấu hình & tiện ích tính điểm ====
 
-// Mỗi vi phạm (không nhận việc / trễ hạn / không hoàn thành...) trừ 5% trên tổng điểm chuyên cần 100%.
-const ATTENDANCE_PENALTY_PER_VIOLATION = 5;
+// Mỗi vi phạm đã xác nhận trừ điểm theo MỨC ĐỘ của chính vi phạm đó trên tổng điểm chuyên cần 100%:
+// Cao = 10%, Trung bình = 8%, Thấp = 5%.
+const VIOLATION_SEVERITY_PENALTY: Record<ViolationSeverity, number> = {
+  cao: 10,
+  trungbinh: 8,
+  thap: 5,
+};
 const ATTENDANCE_BASE_SCORE = 100;
 
 const VIOLATION_CATEGORIES: { code: string; group: string; label: string; defaultSeverity: ViolationSeverity }[] = [
@@ -713,6 +718,22 @@ function violationStatusMeta(v: Violation) {
   return VIOLATION_STATUS_META[v.status || 'xac_nhan'];
 }
 
+// Riêng tiêu chí "Không hoàn thành công việc" (HT-01) luôn trừ cố định 5%, KHÔNG áp dụng bảng
+// trừ điểm theo mức độ ở trên — dù báo cáo được đánh dấu mức độ Cao/Trung bình/Thấp thì vẫn tính 5%.
+function isTaskIncompleteViolation(v: Violation): boolean {
+  if (v.categoryCode === 'HT-01') return true;
+  const label = (v.categoryLabel || '').toLowerCase();
+  return label.includes('không hoàn thành');
+}
+
+// Phần trăm điểm chuyên cần bị trừ cho MỘT vi phạm đã xác nhận:
+// - "Không hoàn thành công việc": luôn 5%, bất kể mức độ.
+// - Còn lại: theo mức độ (Cao = 10%, Trung bình = 8%, Thấp = 5%).
+function violationPenaltyPercent(v: Violation): number {
+  if (isTaskIncompleteViolation(v)) return 5;
+  return VIOLATION_SEVERITY_PENALTY[v.severity || 'trungbinh'] || 0;
+}
+
 function generateViolationCode(existingCount: number): string {
   // Mã vi phạm dạng VP-<6 chữ số>, ví dụ: VP-102346
   return `VP-${String(100000 + existingCount + 1)}`;
@@ -726,8 +747,9 @@ function countCountedViolations(member?: Member | null): number {
 }
 
 function computeAttendanceScore(member?: Member | null): number {
-  const counted = countCountedViolations(member);
-  return Math.max(0, ATTENDANCE_BASE_SCORE - counted * ATTENDANCE_PENALTY_PER_VIOLATION);
+  const countedViolations = (member?.violations || []).filter((v) => (v.status || 'xac_nhan') === 'xac_nhan');
+  const totalPenalty = countedViolations.reduce((sum, v) => sum + violationPenaltyPercent(v), 0);
+  return Math.max(0, ATTENDANCE_BASE_SCORE - totalPenalty);
 }
 
 function attendanceStatusInfo(member?: Member | null): { label: string; tone: string } {
@@ -2402,13 +2424,23 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<FlatViolationRow | null>(null);
 
-  // Nháp trạng thái đang chỉnh trong popup "Chi tiết báo cáo" (Admin/Leader điều chỉnh rồi bấm Lưu mới áp dụng).
+  // Nháp trạng thái & mức độ đang chỉnh trong popup "Chi tiết báo cáo" (Admin/Leader điều chỉnh rồi bấm
+  // "Lưu thay đổi" mới áp dụng — không tự lưu ngay khi chọn). Các trường trong khối "Thông tin sự việc"
+  // (thời điểm, nhân sự, địa điểm, người lập báo cáo, vai trò, trao đổi trực tiếp...) KHÔNG được chỉnh sửa ở đây.
   const [statusDraft, setStatusDraft] = useState<ViolationStatus>('xac_nhan');
+  const [severityDraft, setSeverityDraft] = useState<ViolationSeverity>('trungbinh');
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   useEffect(() => {
     setStatusDraft(detailRow?.violation.status || 'xac_nhan');
+    setSeverityDraft(detailRow?.violation.severity || 'trungbinh');
   }, [detailRow?.violation.id]);
+
+  // Có thay đổi chưa lưu so với bản đã lưu trên server hay chưa (chỉ tính trạng thái & mức độ).
+  const hasDetailChanges =
+    !!detailRow &&
+    (statusDraft !== (detailRow.violation.status || 'xac_nhan') ||
+      severityDraft !== (detailRow.violation.severity || 'trungbinh'));
 
   // New violation form state
   const [formMemberId, setFormMemberId] = useState('');
@@ -2612,12 +2644,12 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     if (detailRow?.violation.id === violation.id) setDetailRow(null);
   };
 
-  // Admin/Leader điều chỉnh "trạng thái" của một ghi nhận vi phạm đã lưu, rồi bấm Lưu để áp dụng thay đổi.
-  const handleSaveDetailStatus = async () => {
-    if (!detailRow) return;
+  // Admin/Leader điều chỉnh "trạng thái" và/hoặc "mức độ" của một ghi nhận vi phạm đã lưu, rồi bấm
+  // "Lưu thay đổi" để áp dụng — 2 bước rõ ràng: (1) chọn giá trị mới trong popup, (2) bấm Lưu thay đổi.
+  const handleSaveDetailChanges = async () => {
+    if (!detailRow || !hasDetailChanges) return;
     const { violation, member } = detailRow;
-    if ((violation.status || 'xac_nhan') === statusDraft) return;
-    const updatedViolation: Violation = { ...violation, status: statusDraft };
+    const updatedViolation: Violation = { ...violation, status: statusDraft, severity: severityDraft };
     const updatedMember: Member = {
       ...member,
       violations: (member.violations || []).map((v) => (v.id === violation.id ? updatedViolation : v)),
@@ -2978,40 +3010,49 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 {isAdminOrLeader ? (
-                  <>
-                    <div className="relative inline-flex">
-                      <select
-                        value={statusDraft}
-                        onChange={(e) => setStatusDraft(e.target.value as ViolationStatus)}
-                        title="Điều chỉnh trạng thái ghi nhận vi phạm này"
-                        className={`glacier-btn-bounce cursor-pointer appearance-none rounded-full pl-3 pr-7 py-1 text-xs font-bold outline-none ${VIOLATION_STATUS_META[statusDraft].badge}`}
-                      >
-                        <option value="xac_nhan">Trạng thái: Đã xác nhận</option>
-                        <option value="cho_xu_ly">Trạng thái: Chờ xử lý</option>
-                        <option value="tu_choi">Trạng thái: Đã từ chối</option>
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-                    </div>
-                    {statusDraft !== (detailRow.violation.status || 'xac_nhan') && (
-                      <button
-                        type="button"
-                        onClick={handleSaveDetailStatus}
-                        disabled={isSavingStatus}
-                        className="glacier-btn-bounce inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
-                      >
-                        <Check className="h-3.5 w-3.5" /> {isSavingStatus ? 'Đang lưu...' : 'Lưu thay đổi'}
-                      </button>
-                    )}
-                  </>
+                  <div className="relative inline-flex">
+                    <select
+                      value={statusDraft}
+                      onChange={(e) => setStatusDraft(e.target.value as ViolationStatus)}
+                      title="Điều chỉnh trạng thái ghi nhận vi phạm này"
+                      className={`glacier-btn-bounce cursor-pointer appearance-none rounded-full pl-3 pr-7 py-1 text-xs font-bold outline-none ${VIOLATION_STATUS_META[statusDraft].badge}`}
+                    >
+                      <option value="xac_nhan">Trạng thái: Đã xác nhận</option>
+                      <option value="cho_xu_ly">Trạng thái: Chờ xử lý</option>
+                      <option value="tu_choi">Trạng thái: Đã từ chối</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+                  </div>
                 ) : (
                   <span className={`rounded-full px-3 py-1 text-xs font-bold ${violationStatusMeta(detailRow.violation).badge}`}>
                     Trạng thái: {violationStatusMeta(detailRow.violation).label}
                   </span>
                 )}
-                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${violationSeverityMeta(detailRow.violation).badge}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${violationSeverityMeta(detailRow.violation).dot}`} /> Mức độ: {violationSeverityMeta(detailRow.violation).label}
-                </span>
+                {isAdminOrLeader ? (
+                  <div className="relative inline-flex">
+                    <select
+                      value={severityDraft}
+                      onChange={(e) => setSeverityDraft(e.target.value as ViolationSeverity)}
+                      title="Điều chỉnh mức độ của vi phạm này"
+                      className={`glacier-btn-bounce cursor-pointer appearance-none rounded-full pl-3 pr-7 py-1 text-xs font-bold outline-none ${VIOLATION_SEVERITY_META[severityDraft].badge}`}
+                    >
+                      <option value="cao">Mức độ: Cao</option>
+                      <option value="trungbinh">Mức độ: Trung bình</option>
+                      <option value="thap">Mức độ: Thấp</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+                  </div>
+                ) : (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${violationSeverityMeta(detailRow.violation).badge}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${violationSeverityMeta(detailRow.violation).dot}`} /> Mức độ: {violationSeverityMeta(detailRow.violation).label}
+                  </span>
+                )}
               </div>
+              {isAdminOrLeader && (
+                <p className="text-[11px] text-slate-400">
+                  Chọn trạng thái / mức độ mới rồi bấm "Lưu thay đổi" ở cuối popup để áp dụng. Thông tin sự việc bên dưới không thể chỉnh sửa.
+                </p>
+              )}
 
               <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Thông tin sự việc</div>
@@ -3109,13 +3150,24 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
             </div>
 
             <div className="flex items-center justify-end px-6 py-3 border-t border-sky-100/60 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/80">
-              <button
-                type="button"
-                onClick={() => setDetailRow(null)}
-                className="glacier-btn-bounce rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
-              >
-                Đóng
-              </button>
+              {isAdminOrLeader && hasDetailChanges ? (
+                <button
+                  type="button"
+                  onClick={handleSaveDetailChanges}
+                  disabled={isSavingStatus}
+                  className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5" /> {isSavingStatus ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setDetailRow(null)}
+                  className="glacier-btn-bounce rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              )}
             </div>
           </div>
         </div>,
