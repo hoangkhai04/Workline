@@ -152,7 +152,7 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
     }
 
     if (Array.isArray(violations)) {
-      const VALID_SEVERITY = ['cao', 'trungbinh', 'thap'];
+      const VALID_SEVERITY = ['cao', 'trungbinh', 'thap', 'tuychon'];
       const VALID_STATUS = ['xac_nhan', 'cho_xu_ly', 'tu_choi'];
       updates.violations = violations
         .filter((v) => v && v.date && v.note)
@@ -164,6 +164,9 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
           // ----- Cac truong mo rong cua "Chi tiet bao cao vi pham" -----
           ...(v.code ? { code: String(v.code).slice(0, 50) } : {}),
           ...(VALID_SEVERITY.includes(v.severity) ? { severity: v.severity } : {}),
+          ...(typeof v.customPenaltyPercent === 'number' && Number.isFinite(v.customPenaltyPercent) && v.customPenaltyPercent >= 0
+            ? { customPenaltyPercent: v.customPenaltyPercent }
+            : {}),
           ...(VALID_STATUS.includes(v.status) ? { status: v.status } : {}),
           ...(v.location ? { location: String(v.location).slice(0, 200) } : {}),
           ...(v.reportedByName ? { reportedByName: String(v.reportedByName).slice(0, 200) } : {}),
