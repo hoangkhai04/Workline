@@ -388,7 +388,7 @@ const API_BASE_URL = 'https://workline-tmft.onrender.com';
 
 type Role = 'admin' | 'leader' | 'member';
 
-type ViolationSeverity = 'cao' | 'trungbinh' | 'thap';
+type ViolationSeverity = 'cao' | 'trungbinh' | 'thap' | 'tuychon';
 type ViolationStatus = 'xac_nhan' | 'cho_xu_ly' | 'tu_choi';
 
 interface Violation {
@@ -662,11 +662,13 @@ function generateMemberCode(existingMembers: Member[]): string {
 // ==== Vi phạm & Chuyên cần: cấu hình & tiện ích tính điểm ====
 
 // Mỗi vi phạm đã xác nhận trừ điểm theo MỨC ĐỘ của chính vi phạm đó trên tổng điểm chuyên cần 100%:
-// Cao = 10%, Trung bình = 8%, Thấp = 5%.
+// Cao = 10%, Trung bình = 8%, Thấp = 5%. Riêng "Tuỳ chọn" không có % cố định, lấy từ customPenaltyPercent
+// (ô "Tỷ lệ") do Admin/Leader tự nhập khi ghi nhận.
 const VIOLATION_SEVERITY_PENALTY: Record<ViolationSeverity, number> = {
   cao: 10,
   trungbinh: 8,
   thap: 5,
+  tuychon: 0,
 };
 const ATTENDANCE_BASE_SCORE = 100;
 
@@ -693,6 +695,11 @@ const VIOLATION_SEVERITY_META: Record<ViolationSeverity, { label: string; dot: s
     label: 'Thấp',
     dot: 'bg-slate-400',
     badge: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  },
+  tuychon: {
+    label: 'Tuỳ chọn',
+    dot: 'bg-indigo-500',
+    badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400',
   },
 };
 
@@ -2472,7 +2479,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [showMemberSuggestions, setShowMemberSuggestions] = useState(false);
   const [formDate, setFormDate] = useState(todayIso());
   const [formCategoryText, setFormCategoryText] = useState('');
-  const [formSeverity, setFormSeverity] = useState<ViolationSeverity | null>(null);
+  const [formSeverity, setFormSeverity] = useState<ViolationSeverity>('trungbinh');
   // Tỷ lệ vi phạm tự do (%): khi Admin/Leader tự nhập, mục "Mức độ" ở trên bị vô hiệu hoá (chỉ hiển thị,
   // không chọn được) và tỷ lệ này sẽ ghi đè cách trừ điểm theo mức độ. Tỷ lệ không được vượt quá điểm
   // chuyên cần hiện có của nhân sự được chọn.
@@ -2597,7 +2604,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     setShowMemberSuggestions(false);
     setFormDate(todayIso());
     setFormCategoryText('');
-    setFormSeverity(null);
+    setFormSeverity('trungbinh');
     setFormCustomPenalty('');
     setFormStatus('xac_nhan');
     setFormLocation('');
@@ -2672,8 +2679,12 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       setFormError('Vui lòng nhập tiêu chí vi phạm.');
       return;
     }
-    if (!formSeverity && !formCustomPenalty.trim()) {
-      setFormError('Vui lòng chọn Mức độ hoặc nhập Tỷ lệ.');
+    if (!formSeverity) {
+      setFormError('Vui lòng chọn mức độ vi phạm.');
+      return;
+    }
+    if (formSeverity === 'tuychon' && !formCustomPenalty.trim()) {
+      setFormError('Vui lòng nhập Tỷ lệ.');
       return;
     }
     if (!formLocation.trim()) {
@@ -2959,6 +2970,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
           <option value="cao">Cao</option>
           <option value="trungbinh">Trung bình</option>
           <option value="thap">Thấp</option>
+          <option value="tuychon">Tuỳ chọn</option>
         </select>
         <select
           value={statusFilter}
@@ -3457,19 +3469,18 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Mức độ</label>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Mức độ <span className="text-rose-500">*</span></label>
                 <div className="flex gap-2">
-                  {(['cao', 'trungbinh', 'thap'] as ViolationSeverity[]).map((sv) => (
+                  {(['cao', 'trungbinh', 'thap', 'tuychon'] as ViolationSeverity[]).map((sv) => (
                     <button
                       key={sv}
                       type="button"
-                      disabled={!!formCustomPenalty.trim()}
-                      onClick={() => setFormSeverity(formSeverity === sv ? null : sv)}
-                      title={formCustomPenalty.trim() ? 'Đang dùng Tỷ lệ bên dưới, không thể chọn mức độ' : undefined}
+                      onClick={() => {
+                        setFormSeverity(sv);
+                        if (sv !== 'tuychon') setFormCustomPenalty('');
+                      }}
                       className={`glacier-btn-bounce flex-1 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
-                        formCustomPenalty.trim()
-                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500'
-                          : formSeverity === sv
+                        formSeverity === sv
                           ? VIOLATION_SEVERITY_META[sv].badge + ' border-transparent cursor-pointer'
                           : 'cursor-pointer border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'
                       }`}
@@ -3478,37 +3489,29 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     </button>
                   ))}
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">
-                  Chỉ dùng một trong hai: Mức độ hoặc Tỷ lệ bên dưới. Bấm lại vào mức đang chọn để bỏ chọn.
-                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Tỷ lệ (tuỳ chọn)</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    disabled={!!formSeverity}
-                    value={formCustomPenalty}
-                    onChange={(e) => handleCustomPenaltyChange(e.target.value)}
-                    placeholder="VD: 7"
-                    title={formSeverity ? 'Đang chọn Mức độ ở trên, không thể nhập tỷ lệ' : undefined}
-                    className={`w-full rounded-xl border px-3 py-2.5 pr-8 text-sm outline-none ${
-                      formSeverity
-                        ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500'
-                        : 'border-slate-200 bg-slate-50 focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
-                    }`}
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+              {formSeverity === 'tuychon' && (
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Tỷ lệ <span className="text-rose-500">*</span></label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formCustomPenalty}
+                      onChange={(e) => handleCustomPenaltyChange(e.target.value)}
+                      placeholder="VD: 7"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 pr-8 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    {formTargetMember
+                      ? `Tối đa ${formTargetMemberScore}% (điểm chuyên cần hiện có của ${displayNameOf(formTargetMember)}).`
+                      : 'Chọn nhân sự để hệ thống giới hạn tỷ lệ tối đa theo điểm chuyên cần hiện có.'}
+                  </div>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">
-                  {formTargetMember
-                    ? `Tối đa ${formTargetMemberScore}% (điểm chuyên cần hiện có của ${displayNameOf(formTargetMember)}). `
-                    : 'Chọn nhân sự để hệ thống giới hạn tỷ lệ tối đa theo điểm chuyên cần hiện có. '}
-                  Dùng thay cho Mức độ ở trên khi cần một con số cụ thể.
-                </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
