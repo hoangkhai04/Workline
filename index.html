@@ -2447,6 +2447,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   // tiêu chí vi phạm, ghi chú riêng, mô tả diễn biến sự việc và gợi ý xử lý.
   const [statusDraft, setStatusDraft] = useState<ViolationStatus>('xac_nhan');
   const [severityDraft, setSeverityDraft] = useState<ViolationSeverity>('trungbinh');
+  const [customPenaltyDraft, setCustomPenaltyDraft] = useState('');
   const [categoryLabelDraft, setCategoryLabelDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [descriptionDraft, setDescriptionDraft] = useState('');
@@ -2456,6 +2457,11 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   useEffect(() => {
     setStatusDraft(detailRow?.violation.status || 'xac_nhan');
     setSeverityDraft(detailRow?.violation.severity || 'trungbinh');
+    setCustomPenaltyDraft(
+      typeof detailRow?.violation.customPenaltyPercent === 'number'
+        ? String(detailRow.violation.customPenaltyPercent)
+        : ''
+    );
     setCategoryLabelDraft(detailRow?.violation.categoryLabel || '');
     setNoteDraft(detailRow?.violation.note || '');
     setDescriptionDraft(detailRow?.violation.description || '');
@@ -2468,6 +2474,9 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     !!detailRow &&
     (statusDraft !== (detailRow.violation.status || 'xac_nhan') ||
       severityDraft !== (detailRow.violation.severity || 'trungbinh') ||
+      (severityDraft === 'tuychon' &&
+        customPenaltyDraft.trim() !==
+          (typeof detailRow.violation.customPenaltyPercent === 'number' ? String(detailRow.violation.customPenaltyPercent) : '')) ||
       categoryLabelDraft.trim() !== (detailRow.violation.categoryLabel || '').trim() ||
       noteDraft.trim() !== (detailRow.violation.note || '').trim() ||
       descriptionDraft.trim() !== (detailRow.violation.description || '').trim() ||
@@ -2755,10 +2764,19 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const handleSaveDetailChanges = async () => {
     if (!detailRow || !hasDetailChanges) return;
     const { violation, member } = detailRow;
+    let customPenaltyPercent: number | undefined;
+    if (severityDraft === 'tuychon') {
+      const parsed = parseFloat(customPenaltyDraft);
+      if (customPenaltyDraft.trim() === '' || Number.isNaN(parsed) || parsed < 0) {
+        return;
+      }
+      customPenaltyPercent = parsed;
+    }
     const updatedViolation: Violation = {
       ...violation,
       status: statusDraft,
       severity: severityDraft,
+      customPenaltyPercent,
       categoryLabel: categoryLabelDraft.trim() || undefined,
       note: noteDraft.trim() || violation.note,
       description: descriptionDraft.trim() || undefined,
@@ -3197,6 +3215,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                       <option value="cao">Mức độ: Cao</option>
                       <option value="trungbinh">Mức độ: Trung bình</option>
                       <option value="thap">Mức độ: Thấp</option>
+                      <option value="tuychon">Mức độ: Tuỳ chọn</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
                   </div>
@@ -3206,6 +3225,29 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   </span>
                 )}
               </div>
+              {isAdminOrLeader && severityDraft === 'tuychon' && (
+                <div className="max-w-[200px]">
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Tỷ lệ</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={customPenaltyDraft}
+                      onChange={(e) => {
+                        let cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                        const firstDot = cleaned.indexOf('.');
+                        if (firstDot !== -1) {
+                          cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+                        }
+                        setCustomPenaltyDraft(cleaned);
+                      }}
+                      placeholder="VD: 7"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-8 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                  </div>
+                </div>
+              )}
               {isAdminOrLeader && (
                 <p className="text-[11px] text-slate-400">
                   Chỉnh nội dung bên dưới rồi bấm "Lưu thay đổi" ở cuối popup để áp dụng. Riêng khối "Thông tin sự việc" không thể chỉnh sửa.
