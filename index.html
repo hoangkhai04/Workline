@@ -719,7 +719,7 @@ function violationStatusMeta(v: Violation) {
 }
 
 // Riêng tiêu chí "Không hoàn thành công việc" (HT-01) luôn trừ cố định 5%, KHÔNG áp dụng bảng
-// trừ điểm theo mức độ ở trên — dù báo cáo được đánh dấu mức độ Cao/Trung bình/Thấp thì vẫn tính 5%.
+// trừ điểm theo mức độ ở trên - dù báo cáo được đánh dấu mức độ Cao/Trung bình/Thấp thì vẫn tính 5%.
 function isTaskIncompleteViolation(v: Violation): boolean {
   if (v.categoryCode === 'HT-01') return true;
   const label = (v.categoryLabel || '').toLowerCase();
@@ -754,16 +754,16 @@ function computeAttendanceScore(member?: Member | null): number {
 
 function attendanceStatusInfo(member?: Member | null): { label: string; tone: string } {
   const counted = countCountedViolations(member);
-  if (counted === 0) return { label: 'Tốt — chưa có ghi nhận', tone: 'text-emerald-600 dark:text-emerald-400' };
+  if (counted === 0) return { label: 'Tốt - chưa có ghi nhận', tone: 'text-emerald-600 dark:text-emerald-400' };
   if (counted === 1) return { label: 'Nhắc nhở lần 1', tone: 'text-amber-600 dark:text-amber-400' };
   if (counted === 2) return { label: 'Nhắc nhở lần 2', tone: 'text-amber-600 dark:text-amber-400' };
   if (counted <= 4) return { label: `Cảnh báo (lần ${counted})`, tone: 'text-rose-600 dark:text-rose-400' };
-  return { label: 'Nghiêm trọng — cần họp xử lý', tone: 'text-rose-700 dark:text-rose-400' };
+  return { label: 'Nghiêm trọng - cần họp xử lý', tone: 'text-rose-700 dark:text-rose-400' };
 }
 
 function violationDisciplineSuggestion(member?: Member | null): string {
   const counted = countCountedViolations(member);
-  if (counted === 0) return 'Chưa cần xử lý — tiếp tục theo dõi.';
+  if (counted === 0) return 'Chưa cần xử lý - tiếp tục theo dõi.';
   if (counted === 1) return 'Nhắc nhở bằng lời / tin nhắn nội bộ.';
   if (counted === 2) return 'Khiển trách bằng văn bản; cân nhắc trao đổi trực tiếp.';
   if (counted <= 4) return 'Khiển trách chính thức; cân nhắc cắt giảm ca / quyền lợi.';
@@ -837,7 +837,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const asideRef = useRef<HTMLElement>(null);
 
   // Cho phép bấm ra ngoài tab menu (điện thoại/mac/laptop) để tự động đóng lại,
-  // trừ khi bấm ngay vào nút mở/đóng menu (3 gạch) ở Header — nút đó đã tự xử lý việc bật/tắt.
+  // trừ khi bấm ngay vào nút mở/đóng menu (3 gạch) ở Header - nút đó đã tự xử lý việc bật/tắt.
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -1264,7 +1264,7 @@ const HomeView: React.FC<HomeViewProps> = ({
 
   // Mục "Cần nhận việc": TẤT CẢ thành viên đều thấy các task đang chờ nhận,
   // kể cả khi không phải người được tag. Quyền bấm "Nhận việc" vẫn do canAccept() quyết định
-  // (chỉ assignees hoặc task loại "chung" mới bấm được) — xem canAcc / canAccept(t) bên dưới.
+  // (chỉ assignees hoặc task loại "chung" mới bấm được) - xem canAcc / canAccept(t) bên dưới.
   const tasksToReceive = tasks.filter((t) => !isHiddenForMe(t) && t.status === 'cho_nhan');
   // Số việc THỰC SỰ dành cho người dùng hiện tại (được tag / hoặc việc chung) - dùng cho câu chào & số liệu cá nhân,
   // khác với tasksToReceive (danh sách hiển thị cho tất cả mọi người xem).
@@ -1754,7 +1754,7 @@ const HomeView: React.FC<HomeViewProps> = ({
                     {activePopup === 'vi_pham' && (isLeader ? `Danh sách vi phạm nhân sự (${allViolations.length})` : `Vi phạm của tôi (${myViolationsCount})`)}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {activePopup === 'cho_nhan' && 'Toàn bộ công việc đang chờ tiếp nhận trong nhóm — chỉ người được giao (hoặc việc chung) mới bấm nhận được'}
+                    {activePopup === 'cho_nhan' && 'Toàn bộ công việc đang chờ tiếp nhận trong nhóm - chỉ người được giao (hoặc việc chung) mới bấm nhận được'}
                     {activePopup === 'dang_xu_ly' && 'Các công việc toàn nhóm đang trong quá trình thực hiện'}
                     {activePopup === 'gia_han' && (isLeader ? 'Leader xem xét, duyệt hoặc từ chối đề xuất gia hạn của nhân sự' : 'Theo dõi trạng thái các yêu cầu gia hạn bạn đã gửi')}
                     {activePopup === 'qua_han' && 'Các công việc chưa hoàn thành và đã vượt quá thời hạn cam kết'}
@@ -2428,7 +2428,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<FlatViolationRow | null>(null);
 
   // Nháp trạng thái & mức độ đang chỉnh trong popup "Chi tiết báo cáo" (Admin/Leader điều chỉnh rồi bấm
-  // "Lưu thay đổi" mới áp dụng — không tự lưu ngay khi chọn). Các trường trong khối "Thông tin sự việc"
+  // "Lưu thay đổi" mới áp dụng - không tự lưu ngay khi chọn). Các trường trong khối "Thông tin sự việc"
   // (thời điểm, nhân sự, địa điểm, người lập báo cáo, vai trò, trao đổi trực tiếp...) KHÔNG được chỉnh sửa ở đây.
   // Ngoài trạng thái & mức độ, Admin/Leader còn chỉnh sửa được toàn bộ nội dung còn lại của báo cáo:
   // tiêu chí vi phạm, ghi chú riêng, mô tả diễn biến sự việc và gợi ý xử lý.
@@ -2450,7 +2450,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   }, [detailRow?.violation.id]);
 
   // Có thay đổi chưa lưu so với bản đã lưu trên server hay chưa (trạng thái, mức độ và toàn bộ nội dung
-  // chỉnh sửa được — không tính các trường thuộc "Thông tin sự việc" vì các trường đó không thể sửa).
+  // chỉnh sửa được - không tính các trường thuộc "Thông tin sự việc" vì các trường đó không thể sửa).
   const hasDetailChanges =
     !!detailRow &&
     (statusDraft !== (detailRow.violation.status || 'xac_nhan') ||
@@ -2511,7 +2511,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       ? members.find((m) => m.id === currentUser.id) || currentUser
       : undefined;
 
-  // Tổng số vi phạm đã xác nhận — phản ánh ĐÚNG số lượng thực tế đã ghi nhận (không giới hạn theo năm):
+  // Tổng số vi phạm đã xác nhận - phản ánh ĐÚNG số lượng thực tế đã ghi nhận (không giới hạn theo năm):
   // nếu đang chọn 1 nhân sự cụ thể (hoặc đang xem với vai trò Member) thì đếm toàn bộ vi phạm đã xác nhận
   // của riêng người đó; nếu Admin/Leader đang xem "Tất cả nhân sự" thì đếm tổng trong toàn bộ phạm vi.
   const confirmedViolationsCount = focusMember
@@ -2686,7 +2686,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   };
 
   // Admin/Leader chỉnh sửa trạng thái, mức độ và toàn bộ nội dung còn lại của một báo cáo vi phạm đã lưu
-  // (trừ khối "Thông tin sự việc"), rồi bấm "Lưu thay đổi" để áp dụng — 2 bước rõ ràng: (1) chỉnh trong
+  // (trừ khối "Thông tin sự việc"), rồi bấm "Lưu thay đổi" để áp dụng - 2 bước rõ ràng: (1) chỉnh trong
   // popup, (2) bấm Lưu thay đổi.
   const handleSaveDetailChanges = async () => {
     if (!detailRow || !hasDetailChanges) return;
@@ -2854,7 +2854,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
               }}
               onFocus={() => setShowMemberFilterSuggestions(true)}
               onBlur={() => setTimeout(() => setShowMemberFilterSuggestions(false), 150)}
-              placeholder="Tất cả nhân sự — gõ để tìm..."
+              placeholder="Tất cả nhân sự - gõ để tìm..."
               className="w-full sm:w-52 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             />
             {memberFilter !== 'all' && (
