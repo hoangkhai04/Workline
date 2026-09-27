@@ -400,12 +400,12 @@ interface Violation {
   code?: string;              // Mã báo cáo, vd: VR-202609-0001
   categoryCode?: string;      // Mã tiêu chí vi phạm, vd: GG-04
   categoryGroup?: string;     // Nhóm tiêu chí, vd: "Giờ giấc & Chuyên cần"
-  categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng ca không báo trước"
+  categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng không báo trước"
   severity?: ViolationSeverity;
   status?: ViolationStatus;
   location?: string;          // Địa điểm xảy ra sự việc
   reportedByName?: string;    // Người lập báo cáo
-  roleInShift?: string;       // Vai trò trong ca tại thời điểm vi phạm
+  roleInShift?: string;       // Vai trò tại thời điểm vi phạm
   directContact?: boolean;    // Đã trao đổi trực tiếp với đương sự hay chưa
   description?: string;       // Mô tả diễn biến sự việc (chi tiết)
   handlingSuggestion?: string; // Gợi ý xử lý riêng cho báo cáo này, do Admin/Leader ghi khi lập vi phạm
@@ -2348,6 +2348,7 @@ interface ViolationsViewProps {
   currentUser: Member;
   onOpenTaskDetail?: (taskId: string) => void;
   onSaveMember: (member: Member) => void;
+  onRefreshMembers?: () => void;
 }
 
 const ViolationsView: React.FC<ViolationsViewProps> = ({
@@ -2355,8 +2356,15 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   currentUser,
   onOpenTaskDetail,
   onSaveMember,
+  onRefreshMembers,
 }) => {
   const isAdminOrLeader = currentUser.role === 'admin' || currentUser.role === 'leader';
+
+  // Luon lay ban ghi moi nhat cua chinh minh tu server khi mo trang nay, de thay
+  // ngay gop y xu ly moi nhat tu Admin/Leader ma khong can dang xuat dang nhap lai.
+  useEffect(() => {
+    onRefreshMembers?.();
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState<'all' | ViolationSeverity>('all');
@@ -2417,7 +2425,11 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   // Với thành viên: theo dõi tình trạng & điểm chuyên cần của chính họ.
   // Với admin/leader: hiển thị số liệu tổng của toàn bộ phạm vi đang lọc (hoặc người đang chọn trong bộ lọc nhân sự).
   const focusMember: Member | undefined =
-    memberFilter !== 'all' ? scopeMembers.find((m) => m.id === memberFilter) : !isAdminOrLeader ? currentUser : undefined;
+    memberFilter !== 'all'
+      ? scopeMembers.find((m) => m.id === memberFilter)
+      : !isAdminOrLeader
+      ? members.find((m) => m.id === currentUser.id) || currentUser
+      : undefined;
 
   const attendanceScore = focusMember ? computeAttendanceScore(focusMember) : null;
   const statusInfo = focusMember ? attendanceStatusInfo(focusMember) : null;
@@ -2772,7 +2784,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 )}
                 {v.roleInShift && (
                   <div className="text-slate-500 dark:text-slate-400">
-                    Vai trò trong ca: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.roleInShift}</span>
+                    Vai trò: <span className="font-semibold text-slate-800 dark:text-slate-100">{v.roleInShift}</span>
                   </div>
                 )}
               </div>
@@ -2873,7 +2885,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     </div>
                   )}
                   {detailRow.violation.reportedByName && <div>Người lập báo cáo: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.reportedByName}</span></div>}
-                  {detailRow.violation.roleInShift && <div>Vai trò trong ca: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.roleInShift}</span></div>}
+                  {detailRow.violation.roleInShift && <div>Vai trò: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.roleInShift}</span></div>}
                   {typeof detailRow.violation.directContact === 'boolean' && (
                     <div>Đã trao đổi trực tiếp: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.directContact ? 'Có' : 'Chưa'}</span></div>
                   )}
@@ -3067,7 +3079,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Vai trò trong ca (tuỳ chọn)</label>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Vai trò (tuỳ chọn)</label>
                   <input
                     type="text"
                     value={formRoleInShift}
@@ -5810,7 +5822,7 @@ const MemberModal: React.FC<MemberModalProps> = ({
                     type="text"
                     value={newVioNote}
                     onChange={(e) => setNewVioNote(e.target.value)}
-                    placeholder="VD: Trễ hạn nộp báo cáo ca đêm..."
+                    placeholder="VD: Trễ hạn nộp báo cáo..."
                     className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -7341,24 +7353,27 @@ function App() {
 
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('workline_token'));
 
-  // Tải danh sách nhân sự thật từ server khi vào trang
-  useEffect(() => {
+  // Tải danh sách nhân sự thật từ server khi vào trang (và co the goi lai thu cong
+  // tu cac man hinh can du lieu moi nhat, vi du trang Vi pham de thay ngay gop y moi).
+  const loadMembers = React.useCallback(async () => {
     if (!authToken) return;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/members`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.members) {
-          setMembers(data.members);
-        }
-      } catch (err) {
-        console.error('Load members error:', err);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/members`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.members) {
+        setMembers(data.members);
       }
-    })();
+    } catch (err) {
+      console.error('Load members error:', err);
+    }
   }, [authToken]);
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
   const [currentView, setCurrentView] = useState<'home' | 'members' | 'profile' | 'taskdetail' | 'violations'>('home');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -8680,6 +8695,7 @@ function App() {
               members={members}
               currentUser={currentUser}
               onSaveMember={handleSaveMember}
+              onRefreshMembers={loadMembers}
               onOpenTaskDetail={(tid) => {
                 setSelectedTaskId(tid);
                 setCurrentView('taskdetail');
