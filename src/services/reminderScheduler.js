@@ -1,8 +1,11 @@
+const { v4: uuidv4 } = require('uuid');
+
 const dataService = require('./dataService');
 const push = require('./push');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 phut/lan
 const TZ = 'Asia/Ho_Chi_Minh';
+const SYSTEM_REQUESTER = { id: 'system', name: 'Hệ thống' };
 
 function vnParts(date) {
   const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -127,18 +130,79 @@ async function runCheck() {
   if (newKeys.length > 0) {
     await dataService.appendReminderLogKeys(newKeys);
   }
+
+  await checkOverdueViolations(members, tasks);
+}
+
+// Quet toan bo task: neu da qua han ma van chua hoan thanh ("hoan_thanh"), coi la
+// 1 vi pham cho tung thanh vien duoc giao ("assignees"). Ghi vao bang "violations"
+// va gui thong bao (trong app + push) cho DUNG thanh vien do, chi 1 lan duy nhat
+// cho moi cap (task, thanh vien) nho khoa `overdue:<taskId>:<memberId>`.
+async function checkOverdueViolations(members, tasks) {
+  const violations = await dataService.getAllViolations();
+  const existingKeys = new Set(violations.map((v) => v.key));
+  const nowMs = Date.now();
+
+  for (const task of tasks) {
+    if (task.status === 'hoan_thanh') continue;
+    const deadlineMs = deadlineToVNms(task.deadline);
+    if (!Number.isFinite(deadlineMs) || nowMs < deadlineMs) continue; // chua qua han
+
+    const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+    for (const memberId of assignees) {
+      const key = `overdue:${task.id}:${memberId}`;
+      if (existingKeys.has(key)) continue;
+
+      const member = members.find((m) => m.id === memberId);
+      if (!member) continue;
+
+      const nowIso = new Date().toISOString();
+      const violation = {
+        id: uuidv4(),
+        key,
+        memberId: member.id,
+        memberName: member.name,
+        type: 'overdue_task',
+        reason: `Chưa hoàn thành công việc "${task.title}" đúng hạn (hạn: ${deadlineTimeStr(task.deadline)} ngày ${fmtDateVN(deadlineDateStr(task.deadline))}).`,
+        taskId: task.id,
+        taskTitle: task.title,
+        confirmedBy: null,
+        confirmedByName: null,
+        createdAt: nowIso,
+      };
+
+      try {
+        await dataService.addViolation(violation);
+        existingKeys.add(key); // tranh ghi trung trong cung 1 lan quet neu co 2 assignee tro ve cung member (khong xay ra nhung de an toan)
+
+        const notif = {
+          id: violation.id,
+          to: member.id,
+          toName: member.name,
+          subject: 'Bạn đã vi phạm',
+          body: `Bạn đã vi phạm vì chưa hoàn thành task "${task.title}" đúng hạn.`,
+          time: nowIso,
+          taskId: task.id,
+        };
+        const created = await dataService.saveNotifications(SYSTEM_REQUESTER, [notif]);
+        await push.pushForNotifications(SYSTEM_REQUESTER, created);
+      } catch (err) {
+        console.error('[violation] Ghi nhận vi phạm quá hạn lỗi:', err);
+      }
+    }
+  }
 }
 
 function startReminderScheduler() {
   if (!push.enabled) {
-    console.warn('[reminder] Push chưa bật (thiếu VAPID) — tắt lịch nhắc hẹn.');
+    console.warn('[reminder] Push chưa bật (thiếu VAPID) — tắt lịch nhắc hẹn và kiểm tra vi phạm quá hạn.');
     return;
   }
   runCheck().catch((err) => console.error('[reminder] Lỗi lần kiểm tra đầu tiên:', err));
   setInterval(() => {
     runCheck().catch((err) => console.error('[reminder] Lỗi kiểm tra nhắc hẹn:', err));
   }, CHECK_INTERVAL_MS);
-  console.log('[reminder] Đã bật lịch kiểm tra nhắc hẹn (mỗi 5 phút).');
+  console.log('[reminder] Đã bật lịch kiểm tra nhắc hẹn + vi phạm quá hạn (mỗi 5 phút).');
 }
 
 module.exports = { startReminderScheduler };

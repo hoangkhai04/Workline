@@ -378,7 +378,7 @@ body {
 
 <script type="text/plain" id="app-source">
 const { useState, useEffect, useRef } = React;
-const { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Bell, BellOff, Briefcase, Calendar, CalendarClock, Camera, Check, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Crown, Edit3, ExternalLink, Eye, EyeOff, FileText, Hash, Info, KeyRound, LayoutDashboard, Lock, LogOut, Mail, MapPin, Menu, MessageSquare, Moon, Phone, Plus, RotateCw, Search, Send, Shield, ShieldAlert, Sparkles, Sun, Trash2, Upload, User, UserCheck, UserX, Users, X } = window.LucideIcons;
+const { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Bell, BellOff, Briefcase, Calendar, CalendarClock, Camera, Check, CheckCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Crown, Edit3, ExternalLink, Eye, EyeOff, FileText, Hash, Info, KeyRound, LayoutDashboard, Lock, LogOut, Mail, MapPin, Menu, MessageSquare, Moon, Phone, Plus, RotateCw, Search, Send, Shield, ShieldAlert, Sparkles, Sun, Trash2, Upload, User, UserCheck, UserX, Users, X } = window.LucideIcons;
 const { StrictMode } = React;
 
 // Doi URL nay thanh dia chi server that sau khi ban deploy (xem README workline-server)
@@ -1035,9 +1035,9 @@ const Header: React.FC<HeaderProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => window.location.reload()}
-          title="Về trang chủ (F5)"
-          aria-label="Về trang chủ (F5)"
+          onClick={() => (onGoHome ? onGoHome() : window.location.reload())}
+          title="Về trang chủ"
+          aria-label="Về trang chủ"
           className="flex items-center gap-2.5 cursor-pointer group"
         >
           <div className="glacier-pill-bounce flex h-8 w-8 items-center justify-center rounded-xl bg-white shadow-md shadow-cyan-500/20 group-hover:shadow-cyan-400/40 overflow-hidden p-1">
@@ -1367,7 +1367,7 @@ const HomeView: React.FC<HomeViewProps> = ({
         <button
           type="button"
           onClick={onOpenNewTask}
-          className="glacier-btn-bounce inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-sky-900/20 hover:shadow-cyan-500/30 transition-all shrink-0 cursor-pointer"
+          className="glacier-btn-bounce hidden sm:inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-sky-900/20 hover:shadow-cyan-500/30 transition-all shrink-0 cursor-pointer"
         >
           <Plus className="h-4 w-4" />
           Giao Task Mới
@@ -1496,17 +1496,30 @@ const HomeView: React.FC<HomeViewProps> = ({
 
       {/* Main Task List Panel */}
       <div ref={taskListRef} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 scroll-mt-20">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            Điều phối công việc
-          </h2>
-          <span className="text-xs text-slate-400">
-            Bấm vào từng công việc để xem chi tiết và thảo luận tiến độ
-          </span>
+        <div className="pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
+              <ClipboardList className="h-4 w-4 text-sky-500 dark:text-cyan-400 shrink-0" />
+              Điều phối công việc
+            </h2>
+            <span className="hidden sm:inline text-xs text-slate-400">
+              Bấm vào từng công việc để xem chi tiết và thảo luận tiến độ
+            </span>
+          </div>
+          {/* Trên điện thoại: nút "Giao Task Mới" nằm ngay dưới tiêu đề, cùng khối với "Điều phối công việc" */}
+          <button
+            type="button"
+            onClick={onOpenNewTask}
+            className="glacier-btn-bounce mt-3 flex sm:hidden w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-sky-900/20 hover:shadow-cyan-500/30 transition-all cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            Giao Task Mới
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 border-b border-slate-100 dark:border-slate-800 mb-6 overflow-x-auto pb-1">
+        {/* Tabs: dùng grid 4 cột trên điện thoại để hiển thị đầy đủ 4 mục không cần cuộn ngang,
+            chuyển sang hàng ngang (flex) từ màn hình sm trở lên */}
+        <div className="grid grid-cols-4 gap-1.5 sm:flex sm:gap-2 border-b border-slate-100 dark:border-slate-800 mb-6 sm:overflow-x-auto pb-1">
           {[
             { key: 'cho_nhan', label: 'Cần nhận việc', count: tasksToReceive.length },
             { key: 'dang_xu_ly', label: 'Đang xử lý', count: tasksInProgress.length },
@@ -1517,14 +1530,14 @@ const HomeView: React.FC<HomeViewProps> = ({
               key={tab.key}
               type="button"
               onClick={() => handleSelectTab(tab.key as TabKey)}
-              className={`glacier-pill-bounce flex items-center gap-2 border-b-2 py-2.5 px-3.5 text-sm font-bold whitespace-nowrap rounded-t-xl transition-all cursor-pointer ${
+              className={`glacier-pill-bounce flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2 border-b-2 py-2 px-1 sm:py-2.5 sm:px-3.5 text-center sm:text-left text-[11px] leading-tight sm:text-sm font-bold sm:whitespace-nowrap rounded-t-xl transition-all cursor-pointer ${
                 activeTab === tab.key
                   ? 'border-sky-500 text-sky-600 dark:text-cyan-400 bg-sky-50/50 dark:bg-sky-950/20'
                   : 'border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+              <span>{tab.label}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold ${
                 activeTab === tab.key
                   ? 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-cyan-200'
                   : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'

@@ -8,6 +8,7 @@ const memberRoutes = require('./routes/members');
 const taskRoutes = require('./routes/tasks');
 const notificationRoutes = require('./routes/notifications');
 const pushRoutes = require('./routes/push');
+const violationRoutes = require('./routes/violations');
 const { startReminderScheduler } = require('./services/reminderScheduler');
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/members', memberRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/violations', violationRoutes);
 // Bat loi chung
 app.use((err, req, res, next) => {
   console.error(err);

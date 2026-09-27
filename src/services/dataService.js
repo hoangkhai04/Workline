@@ -2,7 +2,7 @@ const { readDb, writeDb } = require('../config/googleDrive');
 
 // ===== Khoa ghi toan cuc =====
 // TOAN BO thao tac doc-sua-ghi (members, reset tokens, OTP, notifications, tasks,
-// push subscriptions) deu phai di qua CUNG MOT hang doi nay. Ly do: readDb()/writeDb()
+// push subscriptions, violations) deu phai di qua CUNG MOT hang doi nay. Ly do: readDb()/writeDb()
 // doc/ghi de len TOAN BO 1 file JSON duy nhat tren Google Drive, khong co optimistic
 // lock / ETag. Neu 2 request ghi khac nhau (vi du: "xoa thong bao" va "cap nhat ho so")
 // cung doc truoc khi cai truoc kip ghi xong, request ghi sau se de len ban cu va lam
@@ -292,6 +292,33 @@ async function deleteTask(id) {
     await writeDb(db);
   });
 }
+
+// ===== Vi pham =====
+// Moi ban ghi vi pham: { id, key, memberId, memberName, type: 'overdue_task' | 'manual',
+//   reason, taskId, taskTitle, confirmedBy, confirmedByName, createdAt }
+// - type 'overdue_task': he thong tu dong ghi nhan khi task qua han ma chua hoan thanh
+//   (key = `overdue:<taskId>:<memberId>` dung de chong ghi nhan/gui thong bao trung lap).
+// - type 'manual': Admin/Leader xac nhan vi pham thu cong cho 1 thanh vien.
+async function getAllViolations() {
+  const db = await readDb();
+  return db.violations || [];
+}
+
+async function getViolationsFor(memberId) {
+  const violations = await getAllViolations();
+  return violations.filter((v) => v.memberId === memberId);
+}
+
+async function addViolation(violation) {
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.violations = db.violations || [];
+    db.violations.unshift(violation);
+    await writeDb(db);
+    return violation;
+  });
+}
+
 module.exports = {
   getAllMembers,
   findMemberByEmail,
@@ -318,4 +345,7 @@ module.exports = {
   getPushSubscriptionsFor,
   getReminderLogKeys,
   appendReminderLogKeys,
+  getAllViolations,
+  getViolationsFor,
+  addViolation,
 };
