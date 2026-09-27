@@ -2402,6 +2402,14 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<FlatViolationRow | null>(null);
 
+  // Nháp trạng thái đang chỉnh trong popup "Chi tiết báo cáo" (Admin/Leader điều chỉnh rồi bấm Lưu mới áp dụng).
+  const [statusDraft, setStatusDraft] = useState<ViolationStatus>('xac_nhan');
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+
+  useEffect(() => {
+    setStatusDraft(detailRow?.violation.status || 'xac_nhan');
+  }, [detailRow?.violation.id]);
+
   // New violation form state
   const [formMemberId, setFormMemberId] = useState('');
   const [formMemberQuery, setFormMemberQuery] = useState('');
@@ -2604,18 +2612,23 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     if (detailRow?.violation.id === violation.id) setDetailRow(null);
   };
 
-  // Admin/Leader đổi "trạng thái" của một ghi nhận vi phạm sau khi đã lưu.
-  const handleChangeDetailStatus = (newStatus: ViolationStatus) => {
+  // Admin/Leader điều chỉnh "trạng thái" của một ghi nhận vi phạm đã lưu, rồi bấm Lưu để áp dụng thay đổi.
+  const handleSaveDetailStatus = async () => {
     if (!detailRow) return;
     const { violation, member } = detailRow;
-    if ((violation.status || 'xac_nhan') === newStatus) return;
-    const updatedViolation: Violation = { ...violation, status: newStatus };
+    if ((violation.status || 'xac_nhan') === statusDraft) return;
+    const updatedViolation: Violation = { ...violation, status: statusDraft };
     const updatedMember: Member = {
       ...member,
       violations: (member.violations || []).map((v) => (v.id === violation.id ? updatedViolation : v)),
     };
-    onSaveMember(updatedMember);
-    setDetailRow({ violation: updatedViolation, member: updatedMember });
+    setIsSavingStatus(true);
+    try {
+      await onSaveMember(updatedMember);
+      setDetailRow({ violation: updatedViolation, member: updatedMember });
+    } finally {
+      setIsSavingStatus(false);
+    }
   };
 
   return (
@@ -2965,19 +2978,31 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 {isAdminOrLeader ? (
-                  <div className="relative inline-flex">
-                    <select
-                      value={detailRow.violation.status || 'xac_nhan'}
-                      onChange={(e) => handleChangeDetailStatus(e.target.value as ViolationStatus)}
-                      title="Đổi trạng thái ghi nhận vi phạm này"
-                      className={`glacier-btn-bounce cursor-pointer appearance-none rounded-full pl-3 pr-7 py-1 text-xs font-bold outline-none ${violationStatusMeta(detailRow.violation).badge}`}
-                    >
-                      <option value="xac_nhan">Trạng thái: Đã xác nhận</option>
-                      <option value="cho_xu_ly">Trạng thái: Chờ xử lý</option>
-                      <option value="tu_choi">Trạng thái: Đã từ chối</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-                  </div>
+                  <>
+                    <div className="relative inline-flex">
+                      <select
+                        value={statusDraft}
+                        onChange={(e) => setStatusDraft(e.target.value as ViolationStatus)}
+                        title="Điều chỉnh trạng thái ghi nhận vi phạm này"
+                        className={`glacier-btn-bounce cursor-pointer appearance-none rounded-full pl-3 pr-7 py-1 text-xs font-bold outline-none ${VIOLATION_STATUS_META[statusDraft].badge}`}
+                      >
+                        <option value="xac_nhan">Trạng thái: Đã xác nhận</option>
+                        <option value="cho_xu_ly">Trạng thái: Chờ xử lý</option>
+                        <option value="tu_choi">Trạng thái: Đã từ chối</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+                    </div>
+                    {statusDraft !== (detailRow.violation.status || 'xac_nhan') && (
+                      <button
+                        type="button"
+                        onClick={handleSaveDetailStatus}
+                        disabled={isSavingStatus}
+                        className="glacier-btn-bounce inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors cursor-pointer"
+                      >
+                        <Check className="h-3.5 w-3.5" /> {isSavingStatus ? 'Đang lưu...' : 'Lưu thay đổi'}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <span className={`rounded-full px-3 py-1 text-xs font-bold ${violationStatusMeta(detailRow.violation).badge}`}>
                     Trạng thái: {violationStatusMeta(detailRow.violation).label}
