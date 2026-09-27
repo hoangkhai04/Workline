@@ -402,6 +402,7 @@ interface Violation {
   categoryGroup?: string;     // Nhóm tiêu chí, vd: "Giờ giấc & Chuyên cần"
   categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng không báo trước"
   severity?: ViolationSeverity;
+  customPenaltyPercent?: number;  // Tỷ lệ vi phạm tự do (%) do Admin/Leader nhập tay, ghi đè cách trừ điểm theo mức độ/tiêu chí
   status?: ViolationStatus;
   location?: string;          // Địa điểm xảy ra sự việc
   reportedByName?: string;    // Người lập báo cáo
@@ -511,13 +512,13 @@ function colorFor(id: string): string {
 }
 
 function initials(name: string): string {
-  if (!name) return '—';
+  if (!name) return '-';
   const parts = name.trim().split(/\s+/);
   return parts.slice(-2).map((w) => w[0]).join('').toUpperCase();
 }
 
 function displayNameOf(m?: Member | null): string {
-  if (!m) return '—';
+  if (!m) return '-';
   if (m.displayName && m.displayName.trim()) return m.displayName.trim();
   return m.name;
 }
@@ -594,13 +595,13 @@ function nowIso(): string {
 }
 
 function fmtDate(iso?: string): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const d = new Date(iso.slice(0, 10) + 'T00:00:00');
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function fmtDateTime(iso?: string): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const [datePart, timePart] = iso.split('T');
   const d = new Date(datePart + 'T00:00:00');
   const dateStr = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -727,9 +728,14 @@ function isTaskIncompleteViolation(v: Violation): boolean {
 }
 
 // Phần trăm điểm chuyên cần bị trừ cho MỘT vi phạm đã xác nhận:
+// - Có "Tỷ lệ vi phạm tự do" (customPenaltyPercent, Admin/Leader tự nhập): dùng đúng con số đó, ghi đè
+//   mọi cách tính khác bên dưới.
 // - "Không hoàn thành công việc": luôn 5%, bất kể mức độ.
 // - Còn lại: theo mức độ (Cao = 10%, Trung bình = 8%, Thấp = 5%).
 function violationPenaltyPercent(v: Violation): number {
+  if (typeof v.customPenaltyPercent === 'number' && !Number.isNaN(v.customPenaltyPercent)) {
+    return v.customPenaltyPercent;
+  }
   if (isTaskIncompleteViolation(v)) return 5;
   return VIOLATION_SEVERITY_PENALTY[v.severity || 'trungbinh'] || 0;
 }
@@ -2467,6 +2473,10 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [formDate, setFormDate] = useState(todayIso());
   const [formCategoryText, setFormCategoryText] = useState('');
   const [formSeverity, setFormSeverity] = useState<ViolationSeverity>('trungbinh');
+  // Tỷ lệ vi phạm tự do (%): khi Admin/Leader tự nhập, mục "Mức độ" ở trên bị vô hiệu hoá (chỉ hiển thị,
+  // không chọn được) và tỷ lệ này sẽ ghi đè cách trừ điểm theo mức độ. Tỷ lệ không được vượt quá điểm
+  // chuyên cần hiện có của nhân sự được chọn.
+  const [formCustomPenalty, setFormCustomPenalty] = useState('');
   const [formStatus, setFormStatus] = useState<ViolationStatus>('xac_nhan');
   const [formLocation, setFormLocation] = useState('');
   const [formRoleInShift, setFormRoleInShift] = useState('');
@@ -2475,6 +2485,32 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [formDescription, setFormDescription] = useState('');
   const [formHandlingSuggestion, setFormHandlingSuggestion] = useState('');
   const [formError, setFormError] = useState('');
+
+  // Nhân sự đang được chọn trong form + điểm chuyên cần hiện có của người đó (mức trần cho tỷ lệ tự do).
+  const formTargetMember = members.find((m) => m.id === formMemberId) || null;
+  const formTargetMemberScore = formTargetMember ? computeAttendanceScore(formTargetMember) : ATTENDANCE_BASE_SCORE;
+
+  // Gõ tỷ lệ vi phạm tự do: chỉ giữ số/dấu chấm, không cho vượt quá điểm chuyên cần hiện có của nhân sự
+  // đang chọn. Lần đầu chuyển từ rỗng sang có giá trị, trạng thái mặc định chuyển sang "Chờ xử lý"
+  // (Admin/Leader vẫn có thể tự đổi lại trạng thái khác, kể cả "Đã từ chối").
+  const handleCustomPenaltyChange = (raw: string) => {
+    let cleaned = raw.replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot !== -1) {
+      cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+    }
+    if (cleaned !== '' && cleaned !== '.') {
+      const num = parseFloat(cleaned);
+      if (!Number.isNaN(num) && num > formTargetMemberScore) {
+        cleaned = String(formTargetMemberScore);
+      }
+    }
+    const wasEmpty = formCustomPenalty.trim() === '';
+    setFormCustomPenalty(cleaned);
+    if (wasEmpty && cleaned.trim() !== '') {
+      setFormStatus('cho_xu_ly');
+    }
+  };
 
   // Nguồn dữ liệu: Admin/Leader thấy toàn bộ nhân sự, Thành viên chỉ thấy vi phạm của chính mình.
   const scopeMembers = isAdminOrLeader ? members : members.filter((m) => m.id === currentUser.id);
@@ -2562,6 +2598,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     setFormDate(todayIso());
     setFormCategoryText('');
     setFormSeverity('trungbinh');
+    setFormCustomPenalty('');
     setFormStatus('xac_nhan');
     setFormLocation('');
     setFormRoleInShift('');
@@ -2651,6 +2688,21 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       setFormError('Vui lòng nhập ghi chú ngắn gọn về vi phạm.');
       return;
     }
+    // Tỷ lệ vi phạm tự do (nếu có nhập): không được vượt quá điểm chuyên cần hiện có của nhân sự này.
+    let customPenaltyPercent: number | undefined;
+    if (formCustomPenalty.trim() !== '') {
+      const parsed = parseFloat(formCustomPenalty);
+      const maxAllowed = computeAttendanceScore(targetMember);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        setFormError('Tỷ lệ vi phạm tự do không hợp lệ.');
+        return;
+      }
+      if (parsed > maxAllowed) {
+        setFormError(`Tỷ lệ vi phạm tự do không được vượt quá điểm chuyên cần hiện có (${maxAllowed}%).`);
+        return;
+      }
+      customPenaltyPercent = parsed;
+    }
     const existingCount = (targetMember.violations || []).length;
     const newViolation: Violation = {
       id: 'v' + Date.now(),
@@ -2659,6 +2711,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       code: generateViolationCode(existingCount),
       categoryLabel: formCategoryText.trim() || undefined,
       severity: formSeverity,
+      customPenaltyPercent,
       status: formStatus,
       location: formLocation.trim() || undefined,
       reportedByName: displayNameOf(currentUser),
@@ -2747,7 +2800,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {focusMember ? `Vi phạm xác nhận${isAdminOrLeader && memberFilter !== 'all' ? ` — ${displayNameOf(focusMember)}` : ''}` : 'Vi phạm xác nhận'}
+            {focusMember ? `Vi phạm xác nhận${isAdminOrLeader && memberFilter !== 'all' ? ` - ${displayNameOf(focusMember)}` : ''}` : 'Vi phạm xác nhận'}
           </div>
           <div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">
             {confirmedViolationsCount} <span className="text-sm font-semibold text-slate-400">lần ghi nhận</span>
@@ -2755,7 +2808,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {focusMember ? `Điểm chuyên cần${isAdminOrLeader && memberFilter !== 'all' ? ` — ${displayNameOf(focusMember)}` : ''}` : 'Điểm chuyên cần'}
+            {focusMember ? `Điểm chuyên cần${isAdminOrLeader && memberFilter !== 'all' ? ` - ${displayNameOf(focusMember)}` : ''}` : 'Điểm chuyên cần'}
           </div>
           {focusMember ? (
             <>
@@ -2947,7 +3000,7 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     </div>
                   )}
                   <span className="font-mono text-xs font-bold text-sky-700 dark:text-cyan-400">
-                    {v.code || '—'}
+                    {v.code || '-'}
                   </span>
                   {isAdminOrLeader && (
                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -3410,16 +3463,41 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                     <button
                       key={sv}
                       type="button"
+                      disabled={!!formCustomPenalty.trim()}
                       onClick={() => setFormSeverity(sv)}
-                      className={`glacier-btn-bounce flex-1 rounded-xl border px-3 py-2 text-xs font-bold cursor-pointer transition-colors ${
-                        formSeverity === sv
-                          ? VIOLATION_SEVERITY_META[sv].badge + ' border-transparent'
-                          : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'
+                      title={formCustomPenalty.trim() ? 'Đang dùng tỷ lệ vi phạm tự do bên dưới, không thể chọn mức độ' : undefined}
+                      className={`glacier-btn-bounce flex-1 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                        formCustomPenalty.trim()
+                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500'
+                          : formSeverity === sv
+                          ? VIOLATION_SEVERITY_META[sv].badge + ' border-transparent cursor-pointer'
+                          : 'cursor-pointer border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'
                       }`}
                     >
                       {VIOLATION_SEVERITY_META[sv].label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Tỷ lệ vi phạm tự do (tuỳ chọn)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formCustomPenalty}
+                    onChange={(e) => handleCustomPenaltyChange(e.target.value)}
+                    placeholder="VD: 7"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 pr-8 text-sm outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">
+                  {formTargetMember
+                    ? `Tối đa ${formTargetMemberScore}% (điểm chuyên cần hiện có của ${displayNameOf(formTargetMember)}). `
+                    : 'Chọn nhân sự để hệ thống giới hạn tỷ lệ tối đa theo điểm chuyên cần hiện có. '}
+                  Nhập vào đây sẽ ghi đè cách trừ theo Mức độ ở trên.
                 </div>
               </div>
 
@@ -4182,7 +4260,7 @@ const MembersView: React.FC<MembersViewProps> = ({
         {/* Code */}
         <td className="py-3 px-4">
           <span className="glacier-pill-bounce inline-block rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:border-sky-300 transition-colors">
-            {m.code || '—'}
+            {m.code || '-'}
           </span>
         </td>
 
@@ -4217,7 +4295,7 @@ const MembersView: React.FC<MembersViewProps> = ({
               {m.phone}
             </a>
           ) : (
-            <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+            <span className="text-slate-300 dark:text-slate-600 text-xs">-</span>
           )}
         </td>
 
@@ -4248,7 +4326,7 @@ const MembersView: React.FC<MembersViewProps> = ({
               <span className="text-xs text-slate-400">Không</span>
             )
           ) : (
-            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+            <span className="text-xs text-slate-300 dark:text-slate-600">-</span>
           )}
         </td>
       </tr>
@@ -4487,7 +4565,7 @@ const handleSaveReminder = async () => {
               <Hash className="h-4 w-4" /> Mã
             </span>
             <div className="text-sm font-mono font-bold text-slate-900 dark:text-white mt-1">
-              {currentUser.code || '—'}
+              {currentUser.code || '-'}
             </div>
           </div>
         </div>
@@ -6408,7 +6486,7 @@ const QuickProfileModal: React.FC<QuickProfileModalProps> = ({
                 <Hash className="h-3.5 w-3.5 text-slate-400" /> Mã:
               </span>
               <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                {member.code || '—'}
+                {member.code || '-'}
               </span>
             </div>
 
@@ -8757,7 +8835,7 @@ function App() {
                   id: 'up-' + Date.now(),
                   kind: 'system',
                   text: `${displayNameOf(currentUser)} đã gia hạn task đến ${newDeadline.replace('T', ' ')}${
-                    reason ? ' — Lý do: ' + reason : ''
+                    reason ? ' - Lý do: ' + reason : ''
                   }`,
                   time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                 },
