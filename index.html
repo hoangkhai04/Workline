@@ -397,7 +397,7 @@ interface Violation {
   note: string;
   taskId?: string;
   // ---- Các trường mở rộng cho giao diện "Lịch sử vi phạm" chi tiết ----
-  code?: string;              // Mã báo cáo, vd: VR-202609-0001
+  code?: string;              // Mã báo cáo, vd: VP-102346
   categoryCode?: string;      // Mã tiêu chí vi phạm, vd: GG-04
   categoryGroup?: string;     // Nhóm tiêu chí, vd: "Giờ giấc & Chuyên cần"
   categoryLabel?: string;     // Tên tiêu chí, vd: "Vắng không báo trước"
@@ -706,9 +706,8 @@ function violationStatusMeta(v: Violation) {
 }
 
 function generateViolationCode(existingCount: number): string {
-  const d = new Date();
-  const ym = `${d.getFullYear()}${pad2(d.getMonth() + 1)}`;
-  return `VR-${ym}-${String(existingCount + 1).padStart(4, '0')}`;
+  // Mã vi phạm dạng VP-<6 chữ số>, ví dụ: VP-102346
+  return `VP-${String(100000 + existingCount + 1)}`;
 }
 
 // Điểm chuyên cần = 100% - (số vi phạm đã xác nhận x 5%), không thấp hơn 0%.
@@ -805,9 +804,27 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isLeader = currentUser.role === 'leader';
   const isAdminOrLeader = isAdmin || isLeader;
 
+  const asideRef = useRef<HTMLElement>(null);
+
+  // Cho phép bấm ra ngoài tab menu (điện thoại/mac/laptop) để tự động đóng lại,
+  // trừ khi bấm ngay vào nút mở/đóng menu (3 gạch) ở Header — nút đó đã tự xử lý việc bật/tắt.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-sidebar-toggle]')) return;
+      if (asideRef.current && !asideRef.current.contains(target)) {
+        onCloseMobile();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, onCloseMobile]);
+
   return (
     <>
       <aside
+        ref={asideRef}
         className={`fixed md:sticky top-14 z-30 flex h-[calc(100vh-3.5rem)] flex-col border-r border-sky-900/30 bg-slate-900/95 backdrop-blur-md text-slate-300 transition-all duration-300 dark:border-sky-950 shrink-0 ${
           isOpen
             ? 'w-60 p-4 translate-x-0 opacity-100 shadow-lg md:shadow-none'
@@ -961,6 +978,7 @@ const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-3">
         <button
           type="button"
+          data-sidebar-toggle="true"
           onClick={onToggleSidebar}
           className={`glacier-icon-bounce rounded-xl p-2 transition-all cursor-pointer ${
             isSidebarOpen
@@ -2434,8 +2452,15 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const attendanceScore = focusMember ? computeAttendanceScore(focusMember) : null;
   const statusInfo = focusMember ? attendanceStatusInfo(focusMember) : null;
   const autoSuggestion = focusMember ? violationDisciplineSuggestion(focusMember) : null;
-  // Gợi ý xử lý: ưu tiên nội dung Admin/Leader tự ghi (disciplineNote), nếu chưa có thì dùng gợi ý tự động.
-  const suggestion = focusMember ? (focusMember.disciplineNote?.trim() || autoSuggestion) : null;
+  // Gợi ý xử lý mới nhất được Admin/Leader ghi trực tiếp trên một báo cáo vi phạm cụ thể (handlingSuggestion).
+  // allRows đã được sắp xếp theo ngày giảm dần nên phần tử đầu tiên tìm thấy chính là gợi ý mới nhất.
+  const latestHandlingSuggestion = focusMember
+    ? allRows.find((r) => r.member.id === focusMember.id && r.violation.handlingSuggestion?.trim())?.violation
+        .handlingSuggestion?.trim() || null
+    : null;
+  // Gợi ý xử lý: ưu tiên nội dung Admin/Leader tự ghi riêng cho nhân sự (disciplineNote),
+  // sau đó đến gợi ý mới nhất ghi trên một báo cáo vi phạm, cuối cùng mới dùng gợi ý tự động.
+  const suggestion = focusMember ? (focusMember.disciplineNote?.trim() || latestHandlingSuggestion || autoSuggestion) : null;
 
   const [isEditingSuggestion, setIsEditingSuggestion] = useState(false);
   const [suggestionDraft, setSuggestionDraft] = useState('');
@@ -2722,11 +2747,15 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 <div className="flex items-center gap-2.5">
                   {isAdminOrLeader && (
                     <div
-                      className="flex h-7 w-7 items-center justify-center rounded-full font-bold text-white text-[10px] shrink-0"
-                      style={{ backgroundColor: colorFor(m.id) }}
+                      className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full font-bold text-white text-[10px] shrink-0"
+                      style={{ backgroundColor: m.avatarUrl ? undefined : colorFor(m.id) }}
                       title={displayNameOf(m)}
                     >
-                      {initials(displayNameOf(m))}
+                      {m.avatarUrl ? (
+                        <img src={m.avatarUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        initials(displayNameOf(m))
+                      )}
                     </div>
                   )}
                   <span className="font-mono text-xs font-bold text-sky-700 dark:text-cyan-400">
@@ -2848,9 +2877,23 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
           <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-800 shadow-2xl border border-sky-100/90 dark:border-slate-700 flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between px-6 py-4 border-b border-sky-100/70 dark:border-slate-700 bg-gradient-to-r from-sky-50/50 via-white to-sky-50/30 dark:from-slate-800 dark:to-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-                  <ShieldAlert className="h-5 w-5" />
-                </div>
+                {isAdminOrLeader ? (
+                  <div
+                    className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl font-bold text-white text-xs shrink-0"
+                    style={{ backgroundColor: detailRow.member.avatarUrl ? undefined : colorFor(detailRow.member.id) }}
+                    title={displayNameOf(detailRow.member)}
+                  >
+                    {detailRow.member.avatarUrl ? (
+                      <img src={detailRow.member.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      initials(displayNameOf(detailRow.member))
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                )}
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
                   Chi tiết báo cáo {detailRow.violation.code || ''}
                 </h3>
@@ -2878,7 +2921,22 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Thông tin sự việc</div>
                 <div className="grid grid-cols-1 gap-y-1.5 gap-x-4 text-xs sm:grid-cols-2">
                   <div>Thời điểm xảy ra: <span className="font-semibold text-slate-800 dark:text-slate-100">{fmtDate(detailRow.violation.date)}</span></div>
-                  {isAdminOrLeader && <div>Nhân sự: <span className="font-semibold text-slate-800 dark:text-slate-100">{displayNameOf(detailRow.member)}</span></div>}
+                  {isAdminOrLeader && (
+                    <div className="flex items-center gap-1.5">
+                      Nhân sự:
+                      <span
+                        className="flex h-4 w-4 items-center justify-center overflow-hidden rounded-full text-[7px] font-bold text-white shrink-0"
+                        style={{ backgroundColor: detailRow.member.avatarUrl ? undefined : colorFor(detailRow.member.id) }}
+                      >
+                        {detailRow.member.avatarUrl ? (
+                          <img src={detailRow.member.avatarUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          initials(displayNameOf(detailRow.member))
+                        )}
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">{displayNameOf(detailRow.member)}</span>
+                    </div>
+                  )}
                   {detailRow.violation.location && (
                     <div>
                       Địa điểm: <span className="font-semibold text-slate-800 dark:text-slate-100">{detailRow.violation.location}</span>
