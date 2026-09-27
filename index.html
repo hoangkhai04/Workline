@@ -2420,6 +2420,9 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
   const [severityFilter, setSeverityFilter] = useState<'all' | ViolationSeverity>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | ViolationStatus>('all');
   const [memberFilter, setMemberFilter] = useState<'all' | string>(isAdminOrLeader ? 'all' : currentUser.id);
+  // Ô nhập tên để lọc theo nhân sự (thay cho danh sách thả xuống): gõ để tìm, chọn 1 gợi ý hoặc để trống = "Tất cả nhân sự".
+  const [memberFilterQuery, setMemberFilterQuery] = useState('');
+  const [showMemberFilterSuggestions, setShowMemberFilterSuggestions] = useState(false);
   const [detailRow, setDetailRow] = useState<FlatViolationRow | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<FlatViolationRow | null>(null);
@@ -2590,6 +2593,28 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
     setShowMemberSuggestions(false);
     // Vai trò tự động hiển thị theo vai trò hiện tại của nhân sự được chọn.
     setFormRoleInShift(roleLabelOf(m));
+  };
+
+  // Gợi ý nhân sự theo tên khi gõ tìm kiếm trong ô lọc "Tất cả nhân sự" của bộ lọc Lịch sử vi phạm.
+  const filteredMemberFilterSuggestions = members.filter((m) => {
+    const q = memberFilterQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      displayNameOf(m).toLowerCase().includes(q) ||
+      (m.code || '').toLowerCase().includes(q)
+    );
+  });
+
+  const handleSelectMemberFilter = (m: Member) => {
+    setMemberFilter(m.id);
+    setMemberFilterQuery(displayNameOf(m));
+    setShowMemberFilterSuggestions(false);
+  };
+
+  const handleClearMemberFilter = () => {
+    setMemberFilter('all');
+    setMemberFilterQuery('');
+    setShowMemberFilterSuggestions(false);
   };
 
   const handleSubmitViolation = () => {
@@ -2818,16 +2843,59 @@ const ViolationsView: React.FC<ViolationsViewProps> = ({
           />
         </div>
         {isAdminOrLeader && (
-          <select
-            value={memberFilter}
-            onChange={(e) => setMemberFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-          >
-            <option value="all">Tất cả nhân sự</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{displayNameOf(m)}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <input
+              type="text"
+              value={memberFilterQuery}
+              onChange={(e) => {
+                setMemberFilterQuery(e.target.value);
+                setMemberFilter('all');
+                setShowMemberFilterSuggestions(true);
+              }}
+              onFocus={() => setShowMemberFilterSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowMemberFilterSuggestions(false), 150)}
+              placeholder="Tất cả nhân sự — gõ để tìm..."
+              className="w-full sm:w-52 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+            {memberFilter !== 'all' && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleClearMemberFilter}
+                title="Xem tất cả nhân sự"
+                className="glacier-icon-bounce absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {showMemberFilterSuggestions && (
+              <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleClearMemberFilter}
+                  className="glacier-row-bounce flex w-full items-center px-3 py-2 text-left text-xs font-semibold text-slate-500 hover:bg-sky-50 dark:text-slate-400 dark:hover:bg-slate-700"
+                >
+                  Tất cả nhân sự
+                </button>
+                {filteredMemberFilterSuggestions.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleSelectMemberFilter(m)}
+                    className="glacier-row-bounce flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-sky-50 dark:hover:bg-slate-700"
+                  >
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{displayNameOf(m)}</span>
+                    <span className="text-slate-400">{m.code || 'NV'}</span>
+                  </button>
+                ))}
+                {memberFilterQuery.trim() && filteredMemberFilterSuggestions.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-slate-400">Không tìm thấy nhân sự phù hợp.</div>
+                )}
+              </div>
+            )}
+          </div>
         )}
         <select
           value={severityFilter}
