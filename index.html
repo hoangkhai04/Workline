@@ -410,6 +410,7 @@ interface Violation {
   directContact?: boolean;    // Đã trao đổi trực tiếp với đương sự hay chưa
   description?: string;       // Mô tả diễn biến sự việc (chi tiết)
   handlingSuggestion?: string; // Gợi ý xử lý riêng cho báo cáo này, do Admin/Leader ghi khi lập vi phạm
+  auto?: boolean;             // true = hệ thống tự ghi nhận (vd: task quá hạn), không cần Admin/Leader xác nhận
 }
 
 interface Member {
@@ -7965,7 +7966,17 @@ function App() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.members) {
-        setMembers(data.members);
+        const serverMembers: Member[] = data.members;
+        // Chỉ cập nhật state khi dữ liệu thật sự khác, tránh render lại không cần thiết
+        setMembers((prev) => (JSON.stringify(prev) === JSON.stringify(serverMembers) ? prev : serverMembers));
+        // Đồng bộ danh sách vi phạm của chính người đang đăng nhập (vi phạm quá hạn do hệ thống tự ghi nhận)
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const me = serverMembers.find((m) => m.id === prev.id);
+          if (!me) return prev;
+          const serverV = JSON.stringify(me.violations || []);
+          return serverV === JSON.stringify(prev.violations || []) ? prev : { ...prev, violations: me.violations || [] };
+        });
       }
     } catch (err) {
       console.error('Load members error:', err);
@@ -7975,6 +7986,21 @@ function App() {
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  // Vi phạm quá hạn do server tự ghi nhận (không cần Admin/Leader xác nhận) -> tự làm mới danh sách
+  // thành viên mỗi 30 giây và khi quay lại tab, để vi phạm hiện ra mà không phải tải lại trang.
+  useEffect(() => {
+    if (!authToken) return;
+    const refresh = () => {
+      if (document.visibilityState === 'visible') loadMembers();
+    };
+    const timer = setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [authToken, loadMembers]);
   const [currentView, setCurrentView] = useState<'home' | 'members' | 'profile' | 'taskdetail' | 'violations'>('home');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
