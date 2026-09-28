@@ -64,7 +64,8 @@ async function runCheck() {
   const windowMin = Math.ceil(CHECK_INTERVAL_MS / 60000);
   const newKeys = [];
 
-  for (const member of members) {
+  // Nhac hen can push; con tinh vi pham qua han (ben duoi) van chay ke ca khi chua bat push
+  for (const member of (push.enabled ? members : [])) {
     const settings = member.reminderSettings;
     if (!settings) continue;
 
@@ -134,54 +135,76 @@ async function runCheck() {
   await checkOverdueViolations(members, tasks);
 }
 
-// Quet toan bo task: neu da qua han ma van chua hoan thanh ("hoan_thanh"), coi la
-// 1 vi pham cho tung thanh vien duoc giao ("assignees"). Ghi vao bang "violations"
-// va gui thong bao (trong app + push) cho DUNG thanh vien do, chi 1 lan duy nhat
-// cho moi cap (task, thanh vien) nho khoa `overdue:<taskId>:<memberId>`.
+// Tu dong tinh VI PHAM khi task QUA HAN (tieu chi QH-01 "Tre han / qua han cong viec"):
+//  - Task chua hoan thanh ma da qua han chot, HOAC da hoan thanh nhung tre han (completedAt > deadline).
+//  - Ap dung cho tung thanh vien duoc giao (assignees), moi (task, thanh vien) toi da 1 vi pham.
+//  - Ghi thang vao member.violations (status "xac_nhan", nguoi lap "He thong (tu dong)") nen hien ngay
+//    trong muc Vi pham & tinh vao diem chuyen can; dong thoi gui thong bao trong app + push cho dung thanh vien.
+//  - Chi tinh cho task co han chot SAU thoi diem bat tinh nang (dat AUTO_VIOLATION_BACKFILL=true de tinh ca task cu).
+const AUTO_VIOLATION_BACKFILL = String(process.env.AUTO_VIOLATION_BACKFILL || '').toLowerCase() === 'true';
+
 async function checkOverdueViolations(members, tasks) {
-  const violations = await dataService.getAllViolations();
-  const existingKeys = new Set(violations.map((v) => v.key));
+  const since = AUTO_VIOLATION_BACKFILL ? 0 : await dataService.ensureAutoViolationSince();
   const nowMs = Date.now();
 
   for (const task of tasks) {
-    if (task.status === 'hoan_thanh') continue;
     const deadlineMs = deadlineToVNms(task.deadline);
-    if (!Number.isFinite(deadlineMs) || nowMs < deadlineMs) continue; // chua qua han
+    if (!Number.isFinite(deadlineMs) || deadlineMs < since) continue;
+
+    const isDone = task.status === 'hoan_thanh';
+    if (isDone) {
+      const completedMs = Date.parse(task.completedAt || '');
+      if (!Number.isFinite(completedMs) || completedMs <= deadlineMs) continue; // xong dung han / khong ro
+    } else if (nowMs <= deadlineMs) {
+      continue; // chua toi han
+    }
 
     const assignees = Array.isArray(task.assignees) ? task.assignees : [];
     for (const memberId of assignees) {
-      const key = `overdue:${task.id}:${memberId}`;
-      if (existingKeys.has(key)) continue;
-
       const member = members.find((m) => m.id === memberId);
       if (!member) continue;
 
-      const nowIso = new Date().toISOString();
-      const violation = {
-        id: uuidv4(),
-        key,
-        memberId: member.id,
-        memberName: member.name,
-        type: 'overdue_task',
-        reason: `Chưa hoàn thành công việc "${task.title}" đúng hạn (hạn: ${deadlineTimeStr(task.deadline)} ngày ${fmtDateVN(deadlineDateStr(task.deadline))}).`,
-        taskId: task.id,
-        taskTitle: task.title,
-        confirmedBy: null,
-        confirmedByName: null,
-        createdAt: nowIso,
-      };
+      const key = `overdue:${task.id}:${memberId}`;
+      const dl = `${deadlineTimeStr(task.deadline)} ngày ${fmtDateVN(deadlineDateStr(task.deadline))}`;
+      const taskLabel = task.code ? `${task.code} - ${task.title}` : task.title;
 
       try {
-        await dataService.addViolation(violation);
-        existingKeys.add(key); // tranh ghi trung trong cung 1 lan quet neu co 2 assignee tro ve cung member (khong xay ra nhung de an toan)
+        const violation = await dataService.addAutoViolation({
+          memberId,
+          key,
+          // Da co vi pham QH-01 cho cung task (vd Admin/Leader lap tay) -> khong tao trung
+          isDuplicate: (m) =>
+            (m.violations || []).some((v) => v.taskId === task.id && v.categoryCode === 'QH-01'),
+          build: (existingCount) => ({
+            id: 'v' + uuidv4(),
+            date: vnParts(new Date()).dateStr,
+            note: `Quá hạn công việc: ${taskLabel}`.slice(0, 500),
+            taskId: task.id,
+            code: `VP-${100000 + existingCount + 1}`,
+            categoryCode: 'QH-01',
+            categoryGroup: 'Tiến độ & Hạn chót',
+            categoryLabel: 'Trễ hạn / quá hạn công việc',
+            severity: 'trungbinh',
+            status: 'xac_nhan',
+            reportedByName: 'Hệ thống (tự động)',
+            directContact: false,
+            description: `Hệ thống tự động ghi nhận: công việc "${task.title}" có hạn chót ${dl} nhưng ${
+              isDone ? 'được hoàn thành trễ hạn' : 'chưa hoàn thành'
+            }.`,
+            auto: true,
+          }),
+        });
+        if (!violation) continue;
 
         const notif = {
           id: violation.id,
           to: member.id,
           toName: member.name,
           subject: 'Bạn đã vi phạm',
-          body: `Bạn đã vi phạm vì chưa hoàn thành task "${task.title}" đúng hạn.`,
-          time: nowIso,
+          body: isDone
+            ? `Bạn đã vi phạm vì hoàn thành task "${task.title}" trễ hạn (hạn: ${dl}).`
+            : `Bạn đã vi phạm vì chưa hoàn thành task "${task.title}" đúng hạn (hạn: ${dl}).`,
+          time: new Date().toISOString(),
           taskId: task.id,
         };
         const created = await dataService.saveNotifications(SYSTEM_REQUESTER, [notif]);
@@ -195,8 +218,7 @@ async function checkOverdueViolations(members, tasks) {
 
 function startReminderScheduler() {
   if (!push.enabled) {
-    console.warn('[reminder] Push chưa bật (thiếu VAPID) — tắt lịch nhắc hẹn và kiểm tra vi phạm quá hạn.');
-    return;
+    console.warn('[reminder] Push chưa bật (thiếu VAPID) — chỉ chạy kiểm tra vi phạm quá hạn, không gửi nhắc hẹn/push.');
   }
   runCheck().catch((err) => console.error('[reminder] Lỗi lần kiểm tra đầu tiên:', err));
   setInterval(() => {

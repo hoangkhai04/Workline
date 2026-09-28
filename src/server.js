@@ -13,7 +13,7 @@ const { startReminderScheduler } = require('./services/reminderScheduler');
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL ? new URL(process.env.FRONTEND_URL).origin : '*' }))
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 // Phuc vu giao dien (index.html) tu chinh server nay: cung ten mien nen khong loi CORS
 const INDEX_FILE = path.join(__dirname, '..', 'index.html');

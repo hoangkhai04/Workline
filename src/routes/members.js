@@ -92,7 +92,10 @@ router.post('/', requireAuth, requireRole('admin', 'leader'), async (req, res) =
 const VALID_ROLES = ['admin', 'leader', 'member'];
 
 // PUT /api/members/:id - cap nhat thong tin thanh vien (khong doi mat khau qua route nay)
-router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res) => {
+// Cho phep 2 truong hop goi duoc: (1) Admin/Leader sua bat ky thanh vien nao trong quyen han,
+// (2) CHINH CHU tai khoan (bat ke vai tro gi) tu sua HO SO CO BAN cua minh (ten/ten hien thi/
+// so dien thoai/anh dai dien) - vi du man hinh "Ho so ca nhan" cua thanh vien thuong.
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const requester = await dataService.findMemberById(req.user.id);
     if (!requester) return res.status(401).json({ error: 'Vui lòng đăng nhập lại.' });
@@ -101,7 +104,28 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
     if (!target) return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
 
     const isSelf = requester.id === target.id;
+    const isManager = requester.role === 'admin' || requester.role === 'leader';
+
+    if (!isManager && !isSelf) {
+      return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa thông tin của thành viên khác.' });
+    }
+
     const { name, displayName, phone, team, code, avatarUrl, violations, role } = req.body;
+
+    // Thanh vien thuong tu sua chinh minh: CHI duoc doi ho ten/ten hien thi/so dien thoai/
+    // anh dai dien. Khong duoc tu doi role, danh sach vi pham, nhom (team), hay ma nhan vien (code).
+    if (!isManager) {
+      if (role !== undefined || violations !== undefined || team !== undefined || code !== undefined) {
+        return res.status(403).json({
+          error: 'Bạn chỉ được tự cập nhật họ tên, tên hiển thị, số điện thoại và ảnh đại diện của chính mình.',
+        });
+      }
+    }
+
+    // Gioi han dung luong anh dai dien (chuoi base64) de tranh phinh to file JSON tren Google Drive
+    if (typeof avatarUrl === 'string' && avatarUrl.length > 2_000_000) {
+      return res.status(400).json({ error: 'Ảnh đại diện quá lớn. Vui lòng chọn ảnh nhỏ hơn.' });
+    }
 
     // ----- Kiem tra quyen doi vai tro / sua nguoi khac -----
     if (requester.role === 'leader') {
@@ -177,6 +201,7 @@ router.put('/:id', requireAuth, requireRole('admin', 'leader'), async (req, res)
           ...(v.categoryGroup ? { categoryGroup: String(v.categoryGroup).slice(0, 100) } : {}),
           ...(v.categoryCode ? { categoryCode: String(v.categoryCode).slice(0, 50) } : {}),
           ...(v.handlingSuggestion ? { handlingSuggestion: String(v.handlingSuggestion).slice(0, 1000) } : {}),
+          ...(v.auto === true ? { auto: true } : {}),
         }));
     }
 
@@ -376,6 +401,64 @@ router.put('/:id/reminder-settings', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Update reminder settings error:', err);
     return res.status(500).json({ error: 'Có lỗi xảy ra khi lưu cài đặt nhắc hẹn.' });
+  }
+});
+
+// ===== Doi mat khau (chinh chu tu doi, bat buoc xac thuc mat khau cu) =====
+const MIN_PASSWORD_LENGTH = 6; // khop voi reset-password (>= 6 ky tu) va giao dien
+const PASSWORD_MAX_FAILS = 5; // sai mat khau cu qua 5 lan thi khoa tam thoi
+const PASSWORD_LOCK_MS = 15 * 60 * 1000; // 15 phut
+const passwordFails = new Map(); // memberId -> { count, firstAt }
+
+// PUT /api/members/:id/password  { currentPassword, newPassword }
+router.put('/:id/password', requireAuth, async (req, res) => {
+  try {
+    if (req.user.id !== req.params.id) {
+      return res.status(403).json({ error: 'Bạn chỉ có thể đổi mật khẩu của chính mình.' });
+    }
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (typeof currentPassword !== 'string' || !currentPassword) {
+      return res.status(400).json({ error: 'Vui lòng nhập mật khẩu hiện tại.' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Mật khẩu mới phải có ít nhất ${MIN_PASSWORD_LENGTH} ký tự.` });
+    }
+    if (newPassword.length > 128) {
+      return res.status(400).json({ error: 'Mật khẩu mới quá dài (tối đa 128 ký tự).' });
+    }
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ error: 'Mật khẩu mới phải khác mật khẩu hiện tại.' });
+    }
+
+    // Chong do mat khau cu: khoa tam thoi neu sai lien tiep qua nhieu lan
+    const fail = passwordFails.get(req.user.id);
+    if (fail && Date.now() - fail.firstAt > PASSWORD_LOCK_MS) passwordFails.delete(req.user.id);
+    const active = passwordFails.get(req.user.id);
+    if (active && active.count >= PASSWORD_MAX_FAILS) {
+      const wait = Math.ceil((PASSWORD_LOCK_MS - (Date.now() - active.firstAt)) / 60000);
+      return res.status(429).json({ error: `Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau ${wait} phút.` });
+    }
+
+    const target = await dataService.findMemberById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Không tìm thấy thành viên.' });
+
+    const isValid = await bcrypt.compare(currentPassword, target.passwordHash || '');
+    if (!isValid) {
+      const cur = passwordFails.get(req.user.id) || { count: 0, firstAt: Date.now() };
+      cur.count += 1;
+      passwordFails.set(req.user.id, cur);
+      return res.status(400).json({ error: 'Mật khẩu hiện tại không chính xác.' });
+    }
+
+    passwordFails.delete(req.user.id);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await dataService.updateMember(target.id, { passwordHash });
+
+    return res.json({ message: 'Đã đổi mật khẩu thành công.' });
+  } catch (err) {
+    console.error('Change password error:', err);
+    return res.status(500).json({ error: 'Có lỗi xảy ra khi đổi mật khẩu.' });
   }
 });
 

@@ -319,6 +319,50 @@ async function addViolation(violation) {
   });
 }
 
+// ===== Vi pham QUA HAN tu dong (ghi thang vao member.violations - nguon du lieu giao dien doc) =====
+// Moc thoi gian bat dau tinh vi pham tu dong: chi task co han chot SAU moc nay moi bi tinh,
+// tranh "truy thu" hang loat cac task da qua han tu truoc khi bat tinh nang (se tru diem oan).
+async function ensureAutoViolationSince() {
+  return withDbLock(async () => {
+    const db = await readDb();
+    if (!Number.isFinite(db.autoViolationSince)) {
+      db.autoViolationSince = Date.now();
+      await writeDb(db);
+    }
+    return db.autoViolationSince;
+  });
+}
+
+// Them 1 vi pham tu dong cho member, TOI DA 1 LAN cho moi khoa `key` (vd overdue:<taskId>:<memberId>)
+// - khoa duoc luu rieng nen neu Admin/Leader xoa vi pham khoi ho so thi he thong khong tu tao lai.
+// - build(existingCount) tra ve object vi pham (existingCount = so vi pham hien co cua member, de sinh ma VP-xxxxxx).
+// - isDuplicate(member) (tuy chon): tra true neu member da co vi pham tuong duong (vd Admin da lap tay cho cung task).
+// Tra ve vi pham vua tao, hoac null neu bo qua.
+async function addAutoViolation({ memberId, key, build, isDuplicate }) {
+  return withDbLock(async () => {
+    const db = await readDb();
+    db.autoViolationKeys = db.autoViolationKeys || [];
+    if (db.autoViolationKeys.includes(key)) return null;
+
+    db.members = db.members || [];
+    const idx = db.members.findIndex((m) => m.id === memberId);
+    if (idx === -1) return null;
+    const member = db.members[idx];
+
+    db.autoViolationKeys.push(key);
+    if (isDuplicate && isDuplicate(member)) {
+      await writeDb(db); // van ghi khoa de khong kiem tra lai moi 5 phut
+      return null;
+    }
+
+    const existing = Array.isArray(member.violations) ? member.violations : [];
+    const violation = build(existing.length);
+    db.members[idx] = { ...member, violations: [violation, ...existing] };
+    await writeDb(db);
+    return violation;
+  });
+}
+
 module.exports = {
   getAllMembers,
   findMemberByEmail,
@@ -348,4 +392,6 @@ module.exports = {
   getAllViolations,
   getViolationsFor,
   addViolation,
+  ensureAutoViolationSince,
+  addAutoViolation,
 };

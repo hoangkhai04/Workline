@@ -478,6 +478,8 @@ interface Task {
   extensionRequests?: ExtensionRequest[];
   violatedUsers?: string[];
   deletedForUsers?: string[];
+  completedAt?: string;
+  completedBy?: string;
 }
 
 interface EmailNotification {
@@ -584,6 +586,46 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+// Resize + nén ảnh đại diện qua canvas trước khi chuyển thành base64 (data URL).
+// Mục đích: ảnh chụp điện thoại hiện đại có thể 5-15MB, nếu giữ nguyên và lưu vào
+// localStorage (qua state members/currentUser) sẽ dễ vượt quota trình duyệt (~5-10MB)
+// và làm sập toàn bộ giao diện. Resize về tối đa 512px + nén JPEG ~82% giúp file
+// thường chỉ còn vài chục-vài trăm KB, an toàn cho cả localStorage lẫn khi gửi lên server.
+function resizeImageToDataUrl(file: File, maxDim = 512, quality = 0.82): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('Không đọc được tệp ảnh.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string); // fallback: dùng ảnh gốc nếu trình duyệt không hỗ trợ canvas
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(reader.result as string); // fallback: giữ ảnh gốc nếu không decode được
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -626,6 +668,22 @@ function deadlineDate(iso?: string): Date {
 function isOverdue(t: Task): boolean {
   if (t.status === 'hoan_thanh') return false;
   return deadlineDate(t.deadline).getTime() < new Date().getTime();
+}
+
+// Định dạng thời điểm hoàn thành task: "Giờ:Phút dd/mm/yyyy" (vd: 10:30 26/09/2026)
+function fmtCompletedAt(iso?: string): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  const hh = pad2(d.getHours());
+  const mm = pad2(d.getMinutes());
+  const dateStr = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return `${hh}:${mm} ${dateStr}`;
+}
+
+// So sánh thời điểm hoàn thành với hạn chót để biết hoàn thành đúng/trước hạn hay trễ hạn
+function isCompletedOnTime(t: Task): boolean {
+  if (!t.completedAt) return true;
+  return new Date(t.completedAt).getTime() <= deadlineDate(t.deadline).getTime();
 }
 
 function fmtDuration(ms: number): string {
@@ -4415,6 +4473,7 @@ interface ProfileViewProps {
    dailyRules: { daysBefore: number; time: string }[];
    hourRules: { hoursBefore: number }[];
  }) => Promise<void>;
+  onChangePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({
@@ -4424,6 +4483,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onUpdateProfile,
   onShowToast,
   onSaveReminderSettings,
+  onChangePassword,
 }) => {
   // Profile edit fields
   const [name, setName] = useState(currentUser.name);
@@ -4438,6 +4498,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Push notifications
   const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushEnabled));
@@ -4477,19 +4538,29 @@ const handleSaveReminder = async () => {
   }
 };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       onShowToast('error', 'Vui lòng chọn tệp hình ảnh hợp lệ.');
+      e.target.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAvatarUrl(reader.result as string);
+    if (file.size > 8 * 1024 * 1024) {
+      onShowToast('error', 'Dung lượng ảnh tối đa 8MB. Vui lòng chọn ảnh nhỏ hơn.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 512, 0.82);
+      setAvatarUrl(dataUrl);
       onShowToast('info', 'Đã tải ảnh lên. Nhớ bấm "Lưu thay đổi" để hoàn tất.');
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Avatar resize error:', err);
+      onShowToast('error', 'Không thể xử lý ảnh này. Vui lòng thử ảnh khác.');
+    } finally {
+      e.target.value = ''; // cho phép chọn lại đúng file cũ nếu cần, và tránh giữ tham chiếu file cũ
+    }
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -4507,18 +4578,14 @@ const handleSaveReminder = async () => {
     onShowToast('success', 'Đã lưu thay đổi hồ sơ cá nhân thành công.');
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPass) {
       onShowToast('error', 'Vui lòng nhập mật khẩu hiện tại.');
       return;
     }
-    if (currentPass !== (currentUser.password || '123')) {
-      onShowToast('error', 'Mật khẩu hiện tại không chính xác.');
-      return;
-    }
-    if (!newPass || newPass.length < 4) {
-      onShowToast('error', 'Mật khẩu mới phải có tối thiểu 4 ký tự.');
+    if (!newPass || newPass.length < 6) {
+      onShowToast('error', 'Mật khẩu mới phải có tối thiểu 6 ký tự.');
       return;
     }
     if (newPass !== confirmPass) {
@@ -4526,11 +4593,17 @@ const handleSaveReminder = async () => {
       return;
     }
 
-    onUpdateProfile({ password: newPass });
-    setCurrentPass('');
-    setNewPass('');
-    setConfirmPass('');
-    onShowToast('success', 'Đã thay đổi mật khẩu thành công.');
+    setChangingPassword(true);
+    try {
+      const ok = await onChangePassword(currentPass, newPass);
+      if (ok) {
+        setCurrentPass('');
+        setNewPass('');
+        setConfirmPass('');
+      }
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleTogglePush = () => {
@@ -5052,7 +5125,7 @@ const handleSaveReminder = async () => {
                   type={showNew ? 'text' : 'password'}
                   value={newPass}
                   onChange={(e) => setNewPass(e.target.value)}
-                  placeholder="Tối thiểu 4 ký tự"
+                  placeholder="Tối thiểu 6 ký tự"
                   className="w-full rounded-xl border border-slate-200 bg-white pr-9 pl-3.5 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
                 <button
@@ -5090,10 +5163,11 @@ const handleSaveReminder = async () => {
 
           <button
             type="submit"
-            className="glacier-btn-bounce inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer"
+            disabled={changingPassword}
+            className="glacier-btn-bounce inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Lock className="h-4 w-4" />
-            Cập nhật mật khẩu mới
+            {changingPassword ? 'Đang cập nhật...' : 'Cập nhật mật khẩu mới'}
           </button>
         </form>
       </div>
@@ -5453,6 +5527,25 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
         <div className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-line leading-relaxed">
           {task.detail ? linkifyText(task.detail) : 'Không có mô tả chi tiết.'}
         </div>
+
+        {/* Trạng thái hoàn thành: tách riêng khỏi "Trao đổi & Lịch sử", hiển thị ngay dưới phần chi tiết */}
+        {task.status === 'hoan_thanh' && task.completedAt && (() => {
+          const completer = allMembers.find((m) => m.id === task.completedBy);
+          const onTime = isCompletedOnTime(task);
+          return (
+            <div className={`mt-4 flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
+              onTime
+                ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-300'
+                : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300'
+            }`}>
+              <CheckCircle className="h-4 w-4 shrink-0" />
+              <span>
+                {completer ? displayNameOf(completer) : 'Một thành viên'} đã đánh dấu hoàn thành lúc{' '}
+                {fmtCompletedAt(task.completedAt)} - {onTime ? 'Đã hoàn thành xuất sắc' : 'Hoàn thành trễ hạn'}
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Progress Report Card (if active and involved) */}
@@ -5664,23 +5757,28 @@ const MemberModal: React.FC<MemberModalProps> = ({
     setShowPassword(true);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, avatar: 'Dung lượng ảnh tối đa 3MB.' }));
+    if (file.size > 8 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, avatar: 'Dung lượng ảnh tối đa 8MB.' }));
+      e.target.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAvatarUrl(reader.result as string);
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 512, 0.82);
+      setAvatarUrl(dataUrl);
       setErrors((prev) => {
         const copy = { ...prev };
         delete copy.avatar;
         return copy;
       });
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Avatar resize error:', err);
+      setErrors((prev) => ({ ...prev, avatar: 'Không thể xử lý ảnh này. Vui lòng thử ảnh khác.' }));
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleAddViolation = () => {
@@ -7996,23 +8094,41 @@ function App() {
   };
 
   // Persist storage
+  // Bọc try/catch: nếu localStorage đầy quota (vd ảnh đại diện quá lớn) thì chỉ báo lỗi
+  // ra console, KHÔNG được để lỗi văng lên làm sập (unmount) toàn bộ giao diện React.
   useEffect(() => {
-    localStorage.setItem('workline_members', JSON.stringify(members));
+    try {
+      localStorage.setItem('workline_members', JSON.stringify(members));
+    } catch (err) {
+      console.error('Không thể lưu danh sách thành viên vào localStorage:', err);
+    }
   }, [members]);
 
   useEffect(() => {
-    localStorage.setItem('workline_tasks', JSON.stringify(tasks));
+    try {
+      localStorage.setItem('workline_tasks', JSON.stringify(tasks));
+    } catch (err) {
+      console.error('Không thể lưu danh sách task vào localStorage:', err);
+    }
   }, [tasks]);
 
   useEffect(() => {
-    localStorage.setItem('workline_notifications', JSON.stringify(notifications));
+    try {
+      localStorage.setItem('workline_notifications', JSON.stringify(notifications));
+    } catch (err) {
+      console.error('Không thể lưu thông báo vào localStorage:', err);
+    }
   }, [notifications]);
 
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('workline_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('workline_user');
+    try {
+      if (currentUser) {
+        localStorage.setItem('workline_user', JSON.stringify(currentUser));
+      } else {
+        localStorage.removeItem('workline_user');
+      }
+    } catch (err) {
+      console.error('Không thể lưu thông tin người dùng vào localStorage:', err);
     }
   }, [currentUser]);
   // ===== Task: tải từ server khi vào trang, lưu lên server khi có thay đổi =====
@@ -8528,16 +8644,75 @@ function App() {
     addToast('info', `Đã xoá nhân sự ${target.name}.`);
   };
 
-  const handleUpdateProfile = (updated: Partial<Member>) => {
+  const handleUpdateProfile = async (updated: Partial<Member>) => {
     // Thành viên không được tự nâng quyền
     const safeUpdated = { ...updated };
     if (currentUser.role === 'member') {
       delete safeUpdated.role;
     }
+
+    // Cập nhật cục bộ ngay để giao diện phản hồi tức thì (optimistic update)
     const newCurrent = { ...currentUser, ...safeUpdated };
     setCurrentUser(newCurrent);
     setMembers((prev) => prev.map((m) => (m.id === currentUser.id ? newCurrent : m)));
+
+    // Chỉ những trường sau được server lưu qua PUT /api/members/:id (KHÔNG gồm "password" -
+    // đổi mật khẩu thật cần 1 luồng riêng có xác thực mật khẩu cũ qua backend).
+    const SYNCABLE_FIELDS: (keyof Member)[] = ['name', 'displayName', 'phone', 'avatarUrl', 'team', 'code'];
+    const payload: Record<string, any> = {};
+    SYNCABLE_FIELDS.forEach((f) => {
+      if ((safeUpdated as any)[f] !== undefined) payload[f] = (safeUpdated as any)[f];
+    });
+    if (Object.keys(payload).length === 0) return; // vd chỉ đổi password cục bộ -> không gọi server
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/members/${currentUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        addToast('error', data.error || 'Không thể lưu hồ sơ lên máy chủ. Thay đổi chỉ đang lưu tạm trên máy này.');
+        return;
+      }
+      const synced = { ...newCurrent, ...data.member };
+      setCurrentUser(synced);
+      setMembers((prev) => prev.map((m) => (m.id === currentUser.id ? synced : m)));
+    } catch (err) {
+      console.error('Update profile error:', err);
+      addToast('error', 'Không thể kết nối máy chủ để lưu hồ sơ. Thay đổi chỉ đang lưu tạm trên máy này.');
+    }
   };
+  // Đổi mật khẩu thật: gửi mật khẩu cũ + mới lên server, server xác thực bằng bcrypt.
+  // Trả về true nếu đổi thành công (để form tự xoá các ô nhập).
+  const handleChangePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/members/${currentUser.id}/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        addToast('error', data.error || 'Không thể đổi mật khẩu.');
+        return false;
+      }
+      addToast('success', 'Đã đổi mật khẩu thành công.');
+      return true;
+    } catch (err) {
+      console.error('Change password error:', err);
+      addToast('error', 'Không thể kết nối máy chủ để đổi mật khẩu.');
+      return false;
+    }
+  };
+
    const handleSaveReminderSettings = async (settings: {
     dailyRules: { daysBefore: number; time: string }[];
     hourRules: { hoursBefore: number }[];
@@ -8645,21 +8820,15 @@ function App() {
 
   const handleCompleteTask = (taskId: string) => {
     const targetTask = tasks.find((x) => x.id === taskId);
+    const completedAtIso = new Date().toISOString();
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id === taskId) {
           return {
             ...t,
             status: 'hoan_thanh',
-            updates: [
-              ...t.updates,
-              {
-                id: 'up-' + Date.now(),
-                kind: 'system',
-                text: `${displayNameOf(currentUser)} đã đánh dấu hoàn thành task.`,
-                time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-              },
-            ],
+            completedAt: completedAtIso,
+            completedBy: currentUser.id,
           };
         }
         return t;
@@ -8695,6 +8864,8 @@ function App() {
           return {
             ...t,
             status: 'dang_xu_ly',
+            completedAt: undefined,
+            completedBy: undefined,
             updates: [
               ...t.updates,
               {
@@ -9260,6 +9431,7 @@ function App() {
               onUpdateProfile={handleUpdateProfile}
               onShowToast={addToast}
               onSaveReminderSettings={handleSaveReminderSettings}
+              onChangePassword={handleChangePassword}
             />
           )}
 
