@@ -481,6 +481,9 @@ interface Task {
   deletedForUsers?: string[];
   completedAt?: string;
   completedBy?: string;
+  archived?: boolean;   // Đã lưu trữ: ẩn khỏi danh sách của mọi người nhưng vẫn giữ dữ liệu để đối chiếu vi phạm/thống kê
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 interface EmailNotification {
@@ -1390,7 +1393,7 @@ const HomeView: React.FC<HomeViewProps> = ({
       allViolations.push({ violation: v, member: currentUser });
     });
   }
-  const myViolationsCount = (currentUser.violations || []).length;
+  const myViolationsCount = countCountedViolations(currentUser);
 
   let currentList: Task[] = [];
   if (activeTab === 'cho_nhan') currentList = tasksToReceive;
@@ -4286,7 +4289,7 @@ const MembersView: React.FC<MembersViewProps> = ({
 
     const canSeeViolations = isAdminOrLeader || isSelf;
     const activeTasks = tasks.filter((t) => t.assignees.includes(m.id) && t.status !== 'hoan_thanh').length;
-    const vioCount = (m.violations || []).length;
+    const vioCount = countCountedViolations(m);
 
     return (
       <tr key={m.id} className="glacier-row-bounce hover:bg-sky-50/50 dark:hover:bg-slate-800/60 transition-all border-b border-slate-100 dark:border-slate-800">
@@ -5190,6 +5193,8 @@ interface TaskDetailViewProps {
   onReopen: (taskId: string) => void;
   onDelete: (taskId: string) => void;
   onDeleteCompletedTask?: (taskId: string) => void;
+  onArchive?: (taskId: string) => void;
+  onUnarchive?: (taskId: string) => void;
   onAddComment: (taskId: string, text: string, isProgress?: boolean) => void;
   onAddAssignee: (taskId: string, memberId: string) => void;
   onRemoveAssignee: (taskId: string, memberId: string) => void;
@@ -5207,6 +5212,8 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   onReopen,
   onDelete,
   onDeleteCompletedTask,
+  onArchive,
+  onUnarchive,
   onAddComment,
   onAddAssignee,
   onRemoveAssignee,
@@ -5222,6 +5229,21 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   const creator = allMembers.find((m) => m.id === task.creator);
   const isLeader = currentUser.role === 'leader' || currentUser.role === 'admin';
   const isCreator = task.creator === currentUser.id;
+
+  // ----- Quyền xoá / lưu trữ -----
+  // - Task ĐÃ HOÀN THÀNH: chỉ Admin được xoá vĩnh viễn; Admin/Leader được LƯU TRỮ (ẩn nhưng giữ dữ liệu).
+  // - Task chưa hoàn thành (tạo nhầm...): Admin/Leader hoặc người tạo được xoá.
+  // - Task đang có vi phạm liên quan: KHÔNG cho xoá vĩnh viễn (mất bằng chứng đối chiếu) - hãy lưu trữ.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const linkedViolationCount = allMembers.reduce(
+    (sum, m) => sum + (m.violations || []).filter((v) => v.taskId === task.id).length,
+    0
+  );
+  const isDoneTask = task.status === 'hoan_thanh';
+  const roleAllowsDelete = isDoneTask ? currentUser.role === 'admin' : isLeader || isCreator;
+  const canHardDelete = roleAllowsDelete && linkedViolationCount === 0;
+  const canArchive = isDoneTask && isLeader && !task.archived && Boolean(onArchive);
+  const canUnarchive = Boolean(task.archived) && isLeader && Boolean(onUnarchive);
   const isAssignee = task.assignees.includes(currentUser.id);
   const hasAccepted = task.acceptedBy.includes(currentUser.id);
   const overdue = isOverdue(task);
@@ -5317,16 +5339,116 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
               </button>
             )}
 
+            {task.archived && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                Đã lưu trữ
+              </span>
+            )}
+
+            {canArchive && (
+              <button
+                type="button"
+                onClick={() => {
+                  onArchive!(task.id);
+                }}
+                title="Ẩn task khỏi danh sách của mọi người nhưng vẫn giữ dữ liệu để đối chiếu vi phạm và thống kê"
+                className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition-colors"
+              >
+                Lưu trữ cho mọi người
+              </button>
+            )}
+
+            {canUnarchive && (
+              <button
+                type="button"
+                onClick={() => onUnarchive!(task.id)}
+                className="glacier-btn-bounce inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300 transition-colors"
+              >
+                Bỏ lưu trữ
+              </button>
+            )}
+
             {(isLeader || isCreator) && (
               <button
                 type="button"
-                onClick={() => onDelete(task.id)}
-                className="glacier-btn-bounce inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                onClick={() => setConfirmDeleteOpen(true)}
+                disabled={!roleAllowsDelete}
+                title={
+                  !roleAllowsDelete
+                    ? 'Task đã hoàn thành chỉ Quản trị viên mới được xoá vĩnh viễn (Leader có thể lưu trữ)'
+                    : 'Xoá vĩnh viễn task này cho tất cả mọi người'
+                }
+                className="glacier-btn-bounce inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed dark:text-rose-400"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Xoá vĩnh viễn
               </button>
             )}
+
+            {confirmDeleteOpen &&
+              ReactDOM.createPortal(
+                <div
+                  onClick={() => setConfirmDeleteOpen(false)}
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+                  >
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      {linkedViolationCount > 0 ? 'Không thể xoá vĩnh viễn task này' : 'Xoá vĩnh viễn task này?'}
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                      <span className="font-semibold">{task.title}</span>
+                    </p>
+                    {linkedViolationCount > 0 ? (
+                      <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        Task này đang gắn với {linkedViolationCount} vi phạm. Xoá sẽ làm mất tài liệu đối chiếu.
+                        {canArchive ? ' Hãy dùng "Lưu trữ cho mọi người" để ẩn task nhưng vẫn giữ dữ liệu.' : ' Hãy xoá/xử lý các vi phạm liên quan trước, hoặc nhờ Admin/Leader lưu trữ task.'}
+                      </p>
+                    ) : (
+                      <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                        Task sẽ bị xoá khỏi hệ thống cho TẤT CẢ thành viên và không thể khôi phục.
+                        {isDoneTask && ' Task đã hoàn thành sẽ mất khỏi lịch sử làm việc của người thực hiện; cân nhắc "Lưu trữ" nếu chỉ muốn dọn danh sách.'}
+                      </p>
+                    )}
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteOpen(false)}
+                        className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        Huỷ
+                      </button>
+                      {linkedViolationCount > 0 && canArchive && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDeleteOpen(false);
+                            onArchive!(task.id);
+                          }}
+                          className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+                        >
+                          Lưu trữ thay vì xoá
+                        </button>
+                      )}
+                      {canHardDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDeleteOpen(false);
+                            onDelete(task.id);
+                          }}
+                          className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                        >
+                          Xoá vĩnh viễn
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
           </div>
         </div>
 
@@ -6476,6 +6598,7 @@ const MemberModal: React.FC<MemberModalProps> = ({
 
 interface QuickProfileModalProps {
   member: Member | null;
+  members?: Member[]; // danh sách mới nhất, để popup luôn hiện vi phạm/thông tin cập nhật thay vì bản chụp cũ
   tasks: Task[];
   currentUser: Member;
   onClose: () => void;
@@ -6483,7 +6606,8 @@ interface QuickProfileModalProps {
 }
 
 const QuickProfileModal: React.FC<QuickProfileModalProps> = ({
-  member,
+  member: memberSnapshot,
+  members,
   tasks,
   currentUser,
   onClose,
@@ -6502,7 +6626,10 @@ const QuickProfileModal: React.FC<QuickProfileModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isClosing]);
 
-  if (!member) return null;
+  if (!memberSnapshot) return null;
+
+  // Luôn lấy bản mới nhất của thành viên (popup lưu sẵn 1 bản chụp lúc bấm mở nên dễ bị cũ)
+  const member = (members || []).find((m) => m.id === memberSnapshot.id) || memberSnapshot;
 
   const handleCloseWithBounce = () => {
     if (isClosing) return;
@@ -6513,11 +6640,16 @@ const QuickProfileModal: React.FC<QuickProfileModalProps> = ({
     }, 220);
   };
 
-  const myTasks = tasks.filter((t) => t.assignees.includes(member.id));
+  // Không đếm các task người đang xem đã xoá khỏi danh sách của mình (deletedForUsers),
+  // để số liệu khớp với những gì họ thấy ở trang chủ.
+  const myTasks = tasks.filter(
+    (t) => t.assignees.includes(member.id) && !(t.deletedForUsers || []).includes(currentUser.id)
+  );
   const activeTasks = myTasks.filter((t) => t.status !== 'hoan_thanh').length;
   const overdueTasks = myTasks.filter((t) => isOverdue(t)).length;
   const doneTasks = myTasks.filter((t) => t.status === 'hoan_thanh').length;
-  const violationCount = (member.violations || []).length;
+  // Chỉ đếm vi phạm đã xác nhận (giống cách tính điểm chuyên cần), bỏ "Chờ xử lý"/"Đã từ chối"
+  const violationCount = countCountedViolations(member);
   
   const isAdmin = currentUser.role === 'admin';
   const isLeader = currentUser.role === 'leader';
@@ -8915,6 +9047,27 @@ function App() {
     addToast('info', 'Đã xoá công việc.');
   };
 
+  // Lưu trữ task đã hoàn thành cho mọi người: ẩn khỏi danh sách nhưng vẫn giữ dữ liệu
+  // (để đối chiếu vi phạm và giữ đúng thống kê "Hoàn thành" của từng thành viên).
+  const handleArchiveTask = (taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, archived: true, archivedAt: new Date().toISOString(), archivedBy: currentUser.id }
+          : t
+      )
+    );
+    setCurrentView('home');
+    addToast('success', 'Đã lưu trữ task. Task được ẩn khỏi danh sách nhưng vẫn giữ dữ liệu đối chiếu.');
+  };
+
+  const handleUnarchiveTask = (taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, archived: false, archivedAt: undefined, archivedBy: undefined } : t))
+    );
+    addToast('info', 'Đã bỏ lưu trữ task.');
+  };
+
   // Cá nhân xoá nhiệm vụ đã hoàn thành cho riêng mình (các thành viên khác vẫn giữ nguyên)
   const handleDeleteCompletedTask = (taskId: string) => {
     setTasks((prev) =>
@@ -9369,7 +9522,7 @@ function App() {
           <div className="mx-auto w-full max-w-[1600px]">
           {currentView === 'home' && (
             <HomeView
-              tasks={tasks}
+              tasks={tasks.filter((t) => !t.archived)}
               currentUser={currentUser}
               allMembers={members}
               onOpenTaskDetail={(tid) => {
@@ -9472,6 +9625,8 @@ function App() {
               onReopen={handleReopenTask}
               onDelete={handleDeleteTask}
               onDeleteCompletedTask={handleDeleteCompletedTask}
+              onArchive={handleArchiveTask}
+              onUnarchive={handleUnarchiveTask}
               onAddComment={handleAddComment}
               onAddAssignee={handleAddAssignee}
               onRemoveAssignee={handleRemoveAssignee}
@@ -9500,6 +9655,7 @@ function App() {
       {/* Quick Profile Modal */}
       <QuickProfileModal
         member={quickProfileMember}
+        members={members}
         tasks={tasks}
         currentUser={currentUser}
         onClose={() => setQuickProfileMember(null)}
