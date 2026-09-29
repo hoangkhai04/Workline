@@ -8701,6 +8701,11 @@ function App() {
             name: savedMember.name,
             email: savedMember.email,
             role: savedMember.role,
+            displayName: savedMember.displayName,
+            phone: savedMember.phone,
+            team: savedMember.team,
+            code: savedMember.code,
+            avatarUrl: savedMember.avatarUrl || '',
           }),
         });
         const data = await res.json();
